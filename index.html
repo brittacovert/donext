@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#20734a" />
+    <title>donext</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workflow controls">
+        <div class="brand">
+          <div class="brand-mark">do</div>
+          <div>
+            <h1>donext</h1>
+            <p id="todayLabel"></p>
+          </div>
+        </div>
+
+        <section class="panel compact">
+          <div class="panel-title">Mode</div>
+          <div class="segmented" role="tablist" aria-label="Workflow mode">
+            <button class="segment active" data-mode="routine">Routine</button>
+            <button class="segment" data-mode="all">All</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Workflow</div>
+            <div class="panel-tools">
+              <button class="text-button" id="manageWorkflows" type="button">Edit</button>
+              <button class="icon-button" id="resetWorkflow" title="Reset workflow" aria-label="Reset workflow">↺</button>
+            </div>
+          </div>
+          <div class="select-grid">
+            <label>
+              Day
+              <select id="daySelect"></select>
+            </label>
+            <label>
+              Time
+              <select id="timeSelect"></select>
+            </label>
+          </div>
+          <label class="toggle-row free-day-filter" id="freeDayFilterRow" hidden>
+            <input id="freeDayFilter" type="checkbox" />
+            <span>Match selected day</span>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Conditions</div>
+            <div class="panel-tools">
+              <button class="text-button" id="manageConditions" type="button">Edit</button>
+              <button class="text-button" id="clearConditions">Clear</button>
+            </div>
+          </div>
+          <div id="conditionChips" class="chip-list"></div>
+        </section>
+
+        <section class="panel compact">
+          <div class="panel-title">Deadline Focus</div>
+          <label class="range-row">
+            <span>Window</span>
+            <input id="deadlineWindow" type="range" min="0" max="21" value="5" />
+            <strong id="deadlineWindowLabel">5d</strong>
+          </label>
+          <label class="toggle-row">
+            <input id="deadlineOnlyActionable" type="checkbox" checked />
+            <span>Only actionable matches</span>
+          </label>
+        </section>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="modeEyebrow">Routine Builder</p>
+            <h2 id="viewTitle">Morning Routine</h2>
+          </div>
+          <div class="top-actions">
+            <button class="primary-button" id="openCapture">+ Add</button>
+          </div>
+        </header>
+
+        <section class="status-strip" aria-label="Workflow status">
+          <div>
+            <span class="metric" id="routineProgress">0/0</span>
+            <span class="metric-label">routine handled</span>
+          </div>
+          <div>
+            <span class="metric" id="deadlineCount">0</span>
+            <span class="metric-label">imminent</span>
+          </div>
+          <div>
+            <span class="metric" id="visibleCount">0</span>
+            <span class="metric-label">showing</span>
+          </div>
+        </section>
+
+        <section class="deadline-band" id="deadlineBand" hidden>
+          <div class="band-title">Near Deadlines</div>
+          <div id="deadlineList" class="deadline-list"></div>
+        </section>
+
+        <section class="toolbar" aria-label="List controls">
+          <div class="search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="Search visible tasks" />
+          </div>
+          <label class="toggle-row inline">
+            <input id="hideHandled" type="checkbox" checked />
+            <span>Hide handled</span>
+          </label>
+          <label class="toggle-row inline">
+            <input id="showBlocked" type="checkbox" />
+            <span>Show blocked</span>
+          </label>
+          <div class="order-controls">
+            <button class="ghost-button" id="startReorder" type="button">Reorder</button>
+            <div class="reorder-actions" id="reorderActions" hidden>
+              <button class="ghost-button" id="cancelReorder" type="button">Cancel</button>
+              <button class="primary-button" id="saveReorder" type="button">Save order</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="taskFeed" class="task-feed" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="captureDialog" class="capture-dialog">
+      <form id="captureForm">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow" id="captureEyebrow">Quick Capture</p>
+            <h3 id="captureTitle">Put it down, then get back out.</h3>
+          </div>
+          <button class="icon-button" id="closeCapture" type="button" aria-label="Close">×</button>
+        </div>
+
+        <label>
+          Task
+          <input id="taskInput" required maxlength="120" placeholder="What needs doing?" />
+        </label>
+
+        <div class="form-grid compact-fields">
+          <label>
+            Status
+            <select id="statusInput"></select>
+          </label>
+          <label>
+            Deadline
+            <input id="deadlineInput" type="date" />
+          </label>
+        </div>
+
+        <details class="advanced-settings" id="advancedSettings">
+          <summary>Advanced</summary>
+          <div class="advanced-fields">
+            <label>
+              Repeat deadline
+              <select id="recurrenceInput">
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </label>
+            <div id="recurrenceBehavior" hidden>
+              <div class="field-title">Missed occurrences</div>
+              <label class="behavior-toggle">
+                <span>Refresh</span>
+                <input id="stackMissedInput" type="checkbox" role="switch" aria-label="Stack missed occurrences" />
+                <span>Stack</span>
+              </label>
+            </div>
+            <label>
+              Blocked by
+              <select id="blockedByInput"></select>
+            </label>
+            <label>
+              Blocking
+              <select id="blockingInput"></select>
+            </label>
+          </div>
+        </details>
+
+        <div>
+          <div class="field-title">Workflow</div>
+          <div id="workflowInput" class="chip-list selectable"></div>
+        </div>
+
+        <div>
+          <div class="field-title">Conditions</div>
+          <div id="conditionInput" class="chip-list selectable"></div>
+        </div>
+
+        <menu class="dialog-actions">
+          <button class="ghost-button" id="cancelCapture" type="button">Cancel</button>
+          <button class="primary-button" id="saveTask" type="submit">Save task</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="tagDialog" class="capture-dialog tag-dialog">
+      <div class="tag-dialog-body">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h3>Workflows &amp; conditions</h3>
+          </div>
+          <button class="icon-button" id="closeTagDialog" type="button" aria-label="Close tag settings">×</button>
+        </div>
+
+        <section id="workflowManagerSection">
+          <div class="field-title">Workflows</div>
+          <form class="tag-add-row" id="addWorkflowForm">
+            <input id="newWorkflowInput" maxlength="40" placeholder="New workflow" aria-label="New workflow" />
+            <button class="primary-button" type="submit">Add</button>
+          </form>
+          <div class="tag-manager-list" id="workflowManagerList"></div>
+        </section>
+
+        <section id="conditionManagerSection">
+          <div class="field-title">Conditions</div>
+          <form class="tag-add-row" id="addConditionForm">
+            <input id="newConditionInput" maxlength="40" placeholder="New condition" aria-label="New condition" />
+            <button class="primary-button" type="submit">Add</button>
+          </form>
+          <div class="tag-manager-list" id="conditionManagerList"></div>
+        </section>
+      </div>
+    </dialog>
+
+    <script src="notion-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
