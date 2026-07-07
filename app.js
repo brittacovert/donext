@@ -112,11 +112,13 @@ function cacheElements() {
     "viewTitle",
     "daySelect",
     "timeSelect",
+    "routineSelectors",
     "manageWorkflows",
     "manageConditions",
     "freeDayFilterRow",
     "freeDayFilter",
     "workflowChips",
+    "workflowFilterGroup",
     "conditionChips",
     "resetWorkflow",
     "clearConditions",
@@ -124,6 +126,7 @@ function cacheElements() {
     "deadlineWindowLabel",
     "deadlineOnlyActionable",
     "routineProgress",
+    "progressMetric",
     "deadlineCount",
     "visibleCount",
     "deadlineBand",
@@ -321,10 +324,13 @@ function render() {
         ? "Delayed Review"
         : "Whole List";
   els.viewTitle.textContent = titleForMode();
-  els.routineProgress.textContent = `${progressRoutineTasks.filter((task) => task.workedOn || task.delayed).length}/${progressRoutineTasks.length}`;
+  els.routineProgress.textContent = `${progressRoutineTasks.filter((task) => isTaskWorkedOn(task) || isTaskDelayed(task)).length}/${progressRoutineTasks.length}`;
   els.deadlineCount.textContent = deadlineTasks.length;
   els.visibleCount.textContent = viewTasks.length;
   els.deadlineWindowLabel.textContent = `${state.deadlineWindow}d`;
+  els.routineSelectors.hidden = state.mode === "all" || state.mode === "delayed";
+  els.workflowFilterGroup.hidden = state.mode === "routine" || state.mode === "free";
+  els.progressMetric.hidden = state.mode === "all" || state.mode === "delayed";
   els.freeDayFilterRow.hidden = state.mode !== "free";
   els.startReorder.hidden = state.reorderMode;
   els.startReorder.disabled = viewTasks.length < 2;
@@ -358,7 +364,7 @@ function getVisibleTasks() {
         : getAllTasks();
   const filtered = base
     .filter((task) => state.showBlocked || !task.blockedBy)
-    .filter((task) => !state.hideHandled || (!task.workedOn && !task.delayed) || shouldPromptCompletion(task))
+    .filter((task) => !state.hideHandled || (!isTaskWorkedOn(task) && !isTaskDelayed(task)) || shouldPromptCompletion(task))
     .filter((task) => workflowMatch(task))
     .filter((task) => conditionMatch(task))
     .filter((task) => searchMatch(task));
@@ -377,14 +383,14 @@ function getVisibleTasks() {
 function getRoutineTasks({ includeHandled }) {
   return state.tasks.filter((task) => {
     const inWorkflow = task.workflow.includes(state.day) && task.workflow.includes(state.time);
-    const visible = includeHandled || (!task.workedOn && !task.delayed);
+    const visible = includeHandled || (!isTaskWorkedOn(task) && !isTaskDelayed(task));
     return inWorkflow && isCurrentOccurrence(task) && visible;
   });
 }
 
 function isRoutineTaskActionable(task) {
-  return !task.workedOn
-    && !task.delayed
+  return !isTaskWorkedOn(task)
+    && !isTaskDelayed(task)
     && isRoutineTaskVisible(task);
 }
 
@@ -408,7 +414,7 @@ function getAllTasks() {
 
 function getDelayedTasks() {
   return state.tasks.filter((task) => {
-    return isLate(task) || task.delayed || task.lastCheckboxAction === "delayed";
+    return isLate(task) || isTaskDelayed(task) || latestHandlingAction(task) === "delayed";
   });
 }
 
@@ -431,8 +437,8 @@ function searchMatch(task) {
 }
 
 function taskSort(a, b) {
-  return Number(a.delayed) - Number(b.delayed)
-    || Number(a.workedOn) - Number(b.workedOn)
+  return Number(isTaskDelayed(a)) - Number(isTaskDelayed(b))
+    || Number(isTaskWorkedOn(a)) - Number(isTaskWorkedOn(b))
     || (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99)
     || dateRank(a.deadline) - dateRank(b.deadline)
     || a.conditions.join(",").localeCompare(b.conditions.join(","));
@@ -483,8 +489,8 @@ function sortWorkflowTasks(tasks) {
 
 function workflowTieSort(a, b) {
   return Number(shouldPromptCompletion(a)) - Number(shouldPromptCompletion(b))
-    || Number(a.delayed) - Number(b.delayed)
-    || Number(a.workedOn) - Number(b.workedOn)
+    || Number(isTaskDelayed(a)) - Number(isTaskDelayed(b))
+    || Number(isTaskWorkedOn(a)) - Number(isTaskWorkedOn(b))
     || dateRank(a.deadline) - dateRank(b.deadline)
     || a.conditions.join(",").localeCompare(b.conditions.join(","))
     || a.task.localeCompare(b.task);
@@ -563,7 +569,7 @@ function getDeadlineTasks(tasks) {
     .filter((task) => task.deadline)
     .map((task) => ({ ...task, daysLeft: daysUntil(task.deadline) }))
     .filter((task) => task.daysLeft >= 0 && task.daysLeft <= state.deadlineWindow)
-    .filter((task) => !task.workedOn && !task.delayed)
+    .filter((task) => !isTaskWorkedOn(task) && !isTaskDelayed(task))
     .sort((a, b) => a.daysLeft - b.daysLeft || (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99));
 }
 
@@ -596,12 +602,12 @@ function renderTaskFeed(tasks) {
     const card = document.createElement("article");
     const showStatusTag = state.mode === "all" || state.mode === "delayed";
     const completionPrompt = shouldPromptCompletion(task);
-    card.className = `task-card status-${statusClass(task.status)}${task.workedOn ? " worked" : ""}${task.delayed ? " delayed" : ""}${state.reorderMode ? " reorder-card" : ""}${completionPrompt ? " completion-prompt" : ""}`;
+    card.className = `task-card status-${statusClass(task.status)}${isTaskWorkedOn(task) ? " worked" : ""}${isTaskDelayed(task) ? " delayed" : ""}${state.reorderMode ? " reorder-card" : ""}${completionPrompt ? " completion-prompt" : ""}`;
     card.title = statusLabel(task.status);
     const checkControls = state.reorderMode
       ? `<div class="reorder-grip" aria-hidden="true">↕</div>`
-      : `<button class="mini-toggle labeled ${task.workedOn ? "active" : ""}" data-action="worked" title="Worked on" aria-label="Toggle worked on"><span>✓</span><strong>Worked on</strong></button>
-        <button class="mini-toggle labeled delay ${task.delayed ? "active" : ""}" data-action="delayed" title="Not today" aria-label="Toggle not today"><span>!</span><strong>Not today</strong></button>`;
+      : `<button class="mini-toggle labeled ${isTaskWorkedOn(task) ? "active" : ""}" data-action="worked" title="Worked on" aria-label="Toggle worked on"><span>✓</span><strong>Worked on</strong></button>
+        <button class="mini-toggle labeled delay ${isTaskDelayed(task) ? "active" : ""}" data-action="delayed" title="Not today" aria-label="Toggle not today"><span>!</span><strong>Not today</strong></button>`;
     const taskActions = state.reorderMode
       ? `<button class="icon-button" data-action="move-up" title="Move up" aria-label="Move ${escapeHtml(task.task)} up" ${index === 0 ? "disabled" : ""}>↑</button>
         <button class="icon-button" data-action="move-down" title="Move down" aria-label="Move ${escapeHtml(task.task)} down" ${index === tasks.length - 1 ? "disabled" : ""}>↓</button>`
@@ -853,24 +859,23 @@ function saveCapturedTask(event) {
 function toggleTask(id, key) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
-  if (key === "workedOn" && !task.workedOn && task.recurrence !== "none") {
+  if (key === "workedOn" && !isTaskWorkedOn(task) && task.recurrence !== "none") {
     const start = task.nextOccurrence || todayIso;
     task.nextOccurrence = task.stackMissed
       ? addOccurrence(start, task.recurrence)
       : firstOccurrenceAfterToday(start, task.recurrence);
     task.deadline = task.nextOccurrence;
-    task.workedOn = countDueOccurrences(task) === 0;
-    task.delayed = false;
+    setHandlingState(task, "workedOn", countDueOccurrences(task) === 0);
+    setHandlingState(task, "delayed", false);
     task.lastCompleted = todayIso;
     saveTasks();
     render();
     return;
   }
-  task[key] = !task[key];
-  task.lastCheckboxAction = task[key] ? keyToAction(key) : "";
-  task.lastCheckboxAt = task[key] ? new Date().toISOString() : "";
-  if (key === "workedOn" && task.workedOn) task.delayed = false;
-  if (key === "delayed" && task.delayed) task.workedOn = false;
+  const nextValue = key === "workedOn" ? !isTaskWorkedOn(task) : !isTaskDelayed(task);
+  setHandlingState(task, key, nextValue);
+  if (key === "workedOn" && nextValue) setHandlingState(task, "delayed", false);
+  if (key === "delayed" && nextValue) setHandlingState(task, "workedOn", false);
   saveTasks();
   render();
 }
@@ -887,6 +892,76 @@ function deleteTask(id) {
   saveSavedOrders();
   saveTasks();
   render();
+}
+
+function currentHandlingKey() {
+  if (state.mode === "routine" || state.mode === "free") return handlingKey(state.day, state.time);
+  return "global";
+}
+
+function handlingKey(day, time) {
+  return `routine:${day}:${time}`;
+}
+
+function handlingRecord(task, key = currentHandlingKey()) {
+  const records = task.handledStates && typeof task.handledStates === "object" ? task.handledStates : {};
+  if (key === "global") return latestHandlingRecord(task);
+  return records[key] || null;
+}
+
+function latestHandlingRecord(task) {
+  const records = Object.values(task.handledStates || {});
+  if (!records.length) {
+    if (!task.workedOn && !task.delayed) return null;
+    return {
+      workedOn: Boolean(task.workedOn),
+      delayed: Boolean(task.delayed),
+      action: task.lastCheckboxAction || (task.delayed ? "delayed" : "workedOn"),
+      at: task.lastCheckboxAt || "",
+    };
+  }
+  return records
+    .filter((record) => record && (record.workedOn || record.delayed))
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))[0] || null;
+}
+
+function isTaskWorkedOn(task) {
+  return Boolean(handlingRecord(task)?.workedOn);
+}
+
+function isTaskDelayed(task) {
+  return Boolean(handlingRecord(task)?.delayed);
+}
+
+function latestHandlingAction(task) {
+  return latestHandlingRecord(task)?.action || "";
+}
+
+function setHandlingState(task, key, value) {
+  if (!task.handledStates || typeof task.handledStates !== "object" || Array.isArray(task.handledStates)) {
+    task.handledStates = {};
+  }
+  const recordKey = currentHandlingKey();
+  const record = task.handledStates[recordKey] || {};
+  const now = new Date().toISOString();
+  record.workedOn = key === "workedOn" ? value : Boolean(record.workedOn);
+  record.delayed = key === "delayed" ? value : Boolean(record.delayed);
+  if (value) {
+    record.action = keyToAction(key);
+    record.at = now;
+  } else if (!record.workedOn && !record.delayed) {
+    record.action = "";
+    record.at = record.at || now;
+  }
+  if (!record.workedOn && !record.delayed) {
+    delete task.handledStates[recordKey];
+  } else {
+    task.handledStates[recordKey] = record;
+  }
+  task.workedOn = Boolean(latestHandlingRecord(task)?.workedOn);
+  task.delayed = Boolean(latestHandlingRecord(task)?.delayed);
+  task.lastCheckboxAction = latestHandlingRecord(task)?.action || "";
+  task.lastCheckboxAt = latestHandlingRecord(task)?.at || "";
 }
 
 function syncTaskRelations(task, blockedById, blockingId) {
@@ -1155,6 +1230,7 @@ function makeTask(task, conditionsList, status, deadline, workflow, delayed = fa
     delayed,
     lastCheckboxAction: "",
     lastCheckboxAt: "",
+    handledStates: {},
     task,
     conditions: conditionsList,
     status,
@@ -1170,6 +1246,7 @@ function makeTask(task, conditionsList, status, deadline, workflow, delayed = fa
 }
 
 function normalizeTask(task) {
+  const handledStates = normalizeHandledStates(task);
   return {
     ...task,
     conditions: Array.isArray(task.conditions) ? task.conditions : [],
@@ -1182,7 +1259,34 @@ function normalizeTask(task) {
     lastCompleted: task.lastCompleted || "",
     lastCheckboxAction: task.lastCheckboxAction || (task.delayed ? "delayed" : task.workedOn ? "workedOn" : ""),
     lastCheckboxAt: task.lastCheckboxAt || "",
+    handledStates,
     stackMissed: Boolean(task.stackMissed),
+  };
+}
+
+function normalizeHandledStates(task) {
+  if (task.handledStates && typeof task.handledStates === "object" && !Array.isArray(task.handledStates)) {
+    return Object.fromEntries(
+      Object.entries(task.handledStates)
+        .filter(([key, record]) => key && record && typeof record === "object")
+        .map(([key, record]) => [key, {
+          workedOn: Boolean(record.workedOn),
+          delayed: Boolean(record.delayed),
+          action: record.action || (record.delayed ? "delayed" : record.workedOn ? "workedOn" : ""),
+          at: record.at || task.lastCheckboxAt || "",
+        }])
+        .filter(([, record]) => record.workedOn || record.delayed),
+    );
+  }
+  if (!task.workedOn && !task.delayed) return {};
+  const action = task.delayed ? "delayed" : "workedOn";
+  return {
+    [handlingKey(initialView.day, initialView.time)]: {
+      workedOn: Boolean(task.workedOn),
+      delayed: Boolean(task.delayed),
+      action: task.lastCheckboxAction || action,
+      at: task.lastCheckboxAt || new Date().toISOString(),
+    },
   };
 }
 
@@ -1195,6 +1299,7 @@ function refreshRecurringTasks(tasks) {
       task.delayed = false;
       task.lastCheckboxAction = "";
       task.lastCheckboxAt = "";
+      task.handledStates = {};
       changed = true;
     }
   });
@@ -1205,12 +1310,23 @@ function resetHandledTasks(tasks) {
   let changed = false;
   const now = new Date();
   tasks.forEach((task) => {
-    if ((!task.workedOn && !task.delayed) || !task.lastCheckboxAt || task.recurrence !== "none") return;
-    const resetAt = resetTimeForTask(task, task.lastCheckboxAt);
-    if (resetAt && now >= resetAt) {
-      task.workedOn = false;
-      task.delayed = false;
-      changed = true;
+    if (task.recurrence !== "none") return;
+    let taskChanged = false;
+    Object.entries(task.handledStates || {}).forEach(([key, record]) => {
+      if (!record?.at || (!record.workedOn && !record.delayed)) return;
+      const resetAt = resetTimeForKey(key, record.at);
+      if (resetAt && now >= resetAt) {
+        delete task.handledStates[key];
+        taskChanged = true;
+        changed = true;
+      }
+    });
+    if (taskChanged) {
+      const latest = latestHandlingRecord(task);
+      task.workedOn = Boolean(latest?.workedOn);
+      task.delayed = Boolean(latest?.delayed);
+      task.lastCheckboxAction = latest?.action || "";
+      task.lastCheckboxAt = latest?.at || "";
     }
   });
   return changed;
@@ -1289,7 +1405,7 @@ function switchToRecommendedRoutine() {
 }
 
 function shouldPromptCompletion(task) {
-  return task.workedOn && task.recurrence === "none" && !["Current Habit", "Goal Habit"].includes(task.status);
+  return isTaskWorkedOn(task) && task.recurrence === "none" && !["Current Habit", "Goal Habit"].includes(task.status);
 }
 
 function moveCompletionPromptsToBottom(tasks) {
@@ -1311,29 +1427,39 @@ function keyToAction(key) {
   return key === "delayed" ? "delayed" : "workedOn";
 }
 
-function resetTimeForTask(task, handledAt) {
+function resetTimeForKey(key, handledAt) {
   const workflowEndHours = {
     morning: 12,
     "free time": 16,
     evening: 20,
     night: 4,
   };
-  const timedTags = task.workflow.filter((tag) => Object.prototype.hasOwnProperty.call(workflowEndHours, tag));
-  if (timedTags.length) {
-    return timedTags
-      .map((tag) => nextResetAfterHandled(handledAt, workflowEndHours[tag]))
-      .sort((a, b) => a - b)[0];
+  const [, day, time] = key.split(":");
+  if (protectedWorkflowTags.includes(day) && Object.prototype.hasOwnProperty.call(workflowEndHours, time)) {
+    return nextResetAfterHandled(handledAt, day, workflowEndHours[time]);
   }
   return addWeekdays(new Date(handledAt), 2);
 }
 
-function nextResetAfterHandled(handledAt, endHour) {
+function nextResetAfterHandled(handledAt, day, endHour) {
   const handled = new Date(handledAt);
-  const end = new Date(handled);
-  end.setHours(endHour, 0, 0, 0);
-  if (end <= handled) end.setDate(end.getDate() + 1);
+  const end = nextRoutineEndAfter(handled, day, endHour);
   end.setDate(end.getDate() + 1);
   return end;
+}
+
+function nextRoutineEndAfter(handled, day, endHour) {
+  const end = new Date(handled);
+  end.setHours(12, 0, 0, 0);
+  while (dayNameForDate(end) !== day) end.setDate(end.getDate() + 1);
+  end.setHours(endHour, 0, 0, 0);
+  if (endHour <= 4) end.setDate(end.getDate() + 1);
+  if (end <= handled) end.setDate(end.getDate() + 7);
+  return end;
+}
+
+function dayNameForDate(date) {
+  return date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
 }
 
 function addWeekdays(date, count) {

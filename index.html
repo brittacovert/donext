@@ -38,7 +38,7 @@
               <button class="icon-button" id="resetWorkflow" title="Reset workflow" aria-label="Reset workflow">↺</button>
             </div>
           </div>
-          <div class="select-grid">
+          <div class="select-grid" id="routineSelectors">
             <label>
               Day
               <select id="daySelect"></select>
@@ -52,7 +52,7 @@
             <input id="freeDayFilter" type="checkbox" />
             <span>Match selected day</span>
           </label>
-          <div class="filter-group">
+          <div class="filter-group" id="workflowFilterGroup">
             <div class="field-title">Workflow filters</div>
             <div id="workflowChips" class="chip-list"></div>
           </div>
@@ -95,7 +95,7 @@
         </header>
 
         <section class="status-strip" aria-label="Workflow status">
-          <div>
+          <div id="progressMetric">
             <span class="metric" id="routineProgress">0/0</span>
             <span class="metric-label">routine handled</span>
           </div>
