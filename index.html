@@ -26,6 +26,7 @@
           <div class="segmented" role="tablist" aria-label="Workflow mode">
             <button class="segment active" data-mode="routine">Routine</button>
             <button class="segment" data-mode="all">All</button>
+            <button class="segment" data-mode="delayed">Delayed</button>
           </div>
         </section>
 
@@ -51,6 +52,10 @@
             <input id="freeDayFilter" type="checkbox" />
             <span>Match selected day</span>
           </label>
+          <div class="filter-group">
+            <div class="field-title">Workflow filters</div>
+            <div id="workflowChips" class="chip-list"></div>
+          </div>
         </section>
 
         <section class="panel">
@@ -134,6 +139,22 @@
         <section id="taskFeed" class="task-feed" aria-live="polite"></section>
       </main>
     </div>
+
+    <dialog id="routineDialog" class="capture-dialog routine-dialog">
+      <div class="tag-dialog-body">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Fresh Routine</p>
+            <h3 id="routinePromptTitle">Switch routines?</h3>
+          </div>
+        </div>
+        <p id="routinePromptBody" class="dialog-copy"></p>
+        <menu class="dialog-actions split-actions">
+          <button class="ghost-button" id="keepRoutine" type="button">Keep current</button>
+          <button class="primary-button" id="switchRoutine" type="button">Switch</button>
+        </menu>
+      </div>
+    </dialog>
 
     <dialog id="captureDialog" class="capture-dialog">
       <form id="captureForm">
