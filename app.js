@@ -91,6 +91,8 @@ let state = {
   reorderMode: false,
   reorderKey: "",
   draftOrder: [],
+  freeTimePromptKey: "",
+  pendingRoutineSwitch: null,
   savedOrders: loadSavedOrders(),
   tasks: loadTasks(),
 };
@@ -205,18 +207,23 @@ function initializeControls() {
   document.querySelectorAll(".segment").forEach((button) => {
     button.addEventListener("click", () => {
       state.mode = button.dataset.mode;
+      state.pendingRoutineSwitch = null;
       render();
     });
   });
 
   els.daySelect.addEventListener("change", () => {
     state.day = els.daySelect.value;
+    state.mode = "routine";
+    state.pendingRoutineSwitch = null;
     state.captureWorkflow = new Set([state.day, state.time].filter(Boolean));
     render();
   });
 
   els.timeSelect.addEventListener("change", () => {
     state.time = els.timeSelect.value;
+    state.mode = "routine";
+    state.pendingRoutineSwitch = null;
     state.captureWorkflow = new Set([state.day, state.time].filter(Boolean));
     render();
   });
@@ -232,8 +239,8 @@ function initializeControls() {
   els.closeTagDialog.addEventListener("click", () => els.tagDialog.close());
   els.addWorkflowForm.addEventListener("submit", addWorkflow);
   els.addConditionForm.addEventListener("submit", addCondition);
-  els.keepRoutine.addEventListener("click", () => els.routineDialog.close());
-  els.switchRoutine.addEventListener("click", switchToRecommendedRoutine);
+  els.keepRoutine.addEventListener("click", keepCurrentRoutine);
+  els.switchRoutine.addEventListener("click", acceptRoutineSwitch);
 
   els.resetWorkflow.addEventListener("click", () => {
     state.day = dayName;
@@ -303,9 +310,6 @@ function render() {
   const routineTasks = getRoutineTasks({ includeHandled: true });
   const progressRoutineTasks = routineTasks.filter(isRoutineTaskVisible);
   const actionableRoutine = routineTasks.filter(isRoutineTaskActionable);
-  if (state.mode === "routine" && actionableRoutine.length === 0) {
-    state.mode = "free";
-  }
   if (state.reorderMode && state.reorderKey !== currentOrderKey()) resetReorderState();
 
   document.querySelectorAll(".segment").forEach((button) => {
@@ -340,6 +344,7 @@ function render() {
   renderTaskFeed(viewTasks);
   renderConditionControls();
   renderWorkflowFilterControls();
+  maybePromptForFreeTime(progressRoutineTasks, actionableRoutine);
   saveViewState();
 }
 
@@ -1390,16 +1395,43 @@ function titleForMode() {
 function maybePromptForRoutineSwitch() {
   const recommended = currentTimeTag();
   if (!state.workflowTags.includes(recommended) || state.time === recommended) return;
+  state.pendingRoutineSwitch = { type: "time", time: recommended };
   els.routinePromptTitle.textContent = `Switch to ${titleCase(recommended)}?`;
   els.routinePromptBody.textContent = `You last had ${titleCase(state.time)} open. It looks like ${titleCase(recommended)} now.`;
+  els.switchRoutine.textContent = "Switch";
   els.routineDialog.showModal();
 }
 
-function switchToRecommendedRoutine() {
-  state.day = dayName;
-  state.time = currentTimeTag();
-  state.mode = "routine";
-  state.captureWorkflow = new Set([state.day, state.time].filter(Boolean));
+function maybePromptForFreeTime(progressRoutineTasks, actionableRoutine) {
+  if (state.mode !== "routine" || state.time === "free time") return;
+  if (!state.workflowTags.includes("free time")) return;
+  if (progressRoutineTasks.length === 0 || actionableRoutine.length > 0) return;
+  const promptKey = `${state.day}:${state.time}:${progressRoutineTasks.map((task) => task.id).join("|")}`;
+  if (state.freeTimePromptKey === promptKey || els.routineDialog.open) return;
+  state.freeTimePromptKey = promptKey;
+  state.pendingRoutineSwitch = { type: "free", time: "free time" };
+  els.routinePromptTitle.textContent = "Free time?";
+  els.routinePromptBody.textContent = "It looks like this routine is wrapped. Do you want to switch to your free time projects?";
+  els.switchRoutine.textContent = "Switch";
+  els.routineDialog.showModal();
+}
+
+function keepCurrentRoutine() {
+  state.pendingRoutineSwitch = null;
+  els.routineDialog.close();
+}
+
+function acceptRoutineSwitch() {
+  const pending = state.pendingRoutineSwitch;
+  if (!pending) {
+    els.routineDialog.close();
+    return;
+  }
+  state.day = pending.type === "time" ? dayName : state.day;
+  state.time = pending.time;
+  state.mode = pending.type === "free" ? "free" : "routine";
+  state.pendingRoutineSwitch = null;
+  state.captureWorkflow = new Set(state.mode === "free" ? ["free time"] : [state.day, state.time].filter(Boolean));
   els.routineDialog.close();
   render();
 }

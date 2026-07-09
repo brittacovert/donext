@@ -1,4 +1,4 @@
-const cacheName = "donext-personal-v3";
+const cacheName = "donext-personal-v4";
 const appFiles = [
   "./",
   "./index.html",
