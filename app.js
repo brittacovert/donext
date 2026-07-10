@@ -382,7 +382,7 @@ function getVisibleTasks() {
   const order = state.reorderMode && state.reorderKey === key
     ? state.draftOrder
     : state.savedOrders[key] || [];
-  return moveCompletionPromptsToBottom(applyTaskOrder(sorted, order));
+  return moveHandledTasksToBottom(applyTaskOrder(sorted, order));
 }
 
 function getRoutineTasks({ includeHandled }) {
@@ -442,8 +442,7 @@ function searchMatch(task) {
 }
 
 function taskSort(a, b) {
-  return Number(isTaskDelayed(a)) - Number(isTaskDelayed(b))
-    || Number(isTaskWorkedOn(a)) - Number(isTaskWorkedOn(b))
+  return Number(isTaskHandled(a)) - Number(isTaskHandled(b))
     || (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99)
     || dateRank(a.deadline) - dateRank(b.deadline)
     || a.conditions.join(",").localeCompare(b.conditions.join(","));
@@ -493,9 +492,8 @@ function sortWorkflowTasks(tasks) {
 }
 
 function workflowTieSort(a, b) {
-  return Number(shouldPromptCompletion(a)) - Number(shouldPromptCompletion(b))
-    || Number(isTaskDelayed(a)) - Number(isTaskDelayed(b))
-    || Number(isTaskWorkedOn(a)) - Number(isTaskWorkedOn(b))
+  return Number(isTaskHandled(a)) - Number(isTaskHandled(b))
+    || Number(shouldPromptCompletion(a)) - Number(shouldPromptCompletion(b))
     || dateRank(a.deadline) - dateRank(b.deadline)
     || a.conditions.join(",").localeCompare(b.conditions.join(","))
     || a.task.localeCompare(b.task);
@@ -936,6 +934,10 @@ function isTaskWorkedOn(task) {
 
 function isTaskDelayed(task) {
   return Boolean(handlingRecord(task)?.delayed);
+}
+
+function isTaskHandled(task) {
+  return isTaskWorkedOn(task) || isTaskDelayed(task);
 }
 
 function latestHandlingAction(task) {
@@ -1440,10 +1442,10 @@ function shouldPromptCompletion(task) {
   return isTaskWorkedOn(task) && task.recurrence === "none" && !["Current Habit", "Goal Habit"].includes(task.status);
 }
 
-function moveCompletionPromptsToBottom(tasks) {
+function moveHandledTasksToBottom(tasks) {
   return [
-    ...tasks.filter((task) => !shouldPromptCompletion(task)),
-    ...tasks.filter(shouldPromptCompletion),
+    ...tasks.filter((task) => !isTaskHandled(task)),
+    ...tasks.filter(isTaskHandled),
   ];
 }
 
