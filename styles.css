@@ -576,6 +576,11 @@ h2 {
   color: var(--red);
 }
 
+.pill.review {
+  background: #eef1ea;
+  color: #526157;
+}
+
 .pill.recurring {
   background: #e8eef7;
   color: #3f5f82;

@@ -68,6 +68,7 @@ const initialTimeTag = initialSettings.workflowTags.includes(currentTimeTag())
   ? currentTimeTag()
   : initialSettings.workflowTags.find((tag) => !protectedWorkflowTags.includes(tag)) || "free time";
 const initialView = loadViewState(initialSettings, initialTimeTag);
+const initialFilters = initialView.filtersByMode[initialView.mode] || defaultFilterState(initialView.mode);
 
 let state = {
   mode: initialView.mode,
@@ -75,16 +76,17 @@ let state = {
   time: initialView.time,
   workflowTags: initialSettings.workflowTags,
   conditions: initialSettings.conditions,
-  requiredConditions: new Set(initialView.requiredConditions),
-  hiddenConditions: new Set(initialView.hiddenConditions),
-  requiredWorkflows: new Set(initialView.requiredWorkflows),
-  hiddenWorkflows: new Set(initialView.hiddenWorkflows),
-  search: initialView.search,
-  hideHandled: initialView.hideHandled,
-  showBlocked: initialView.showBlocked,
-  deadlineWindow: initialView.deadlineWindow,
-  deadlineOnlyActionable: initialView.deadlineOnlyActionable,
-  freeDayFilter: initialView.freeDayFilter,
+  filtersByMode: initialView.filtersByMode,
+  requiredConditions: new Set(initialFilters.requiredConditions),
+  hiddenConditions: new Set(initialFilters.hiddenConditions),
+  requiredWorkflows: new Set(initialFilters.requiredWorkflows),
+  hiddenWorkflows: new Set(initialFilters.hiddenWorkflows),
+  search: initialFilters.search,
+  hideHandled: initialFilters.hideHandled,
+  showBlocked: initialFilters.showBlocked,
+  deadlineWindow: initialFilters.deadlineWindow,
+  deadlineOnlyActionable: initialFilters.deadlineOnlyActionable,
+  freeDayFilter: initialFilters.freeDayFilter,
   captureWorkflow: new Set([dayName, initialTimeTag]),
   captureConditions: new Set(),
   editingTaskId: null,
@@ -206,23 +208,29 @@ function initializeControls() {
 
   document.querySelectorAll(".segment").forEach((button) => {
     button.addEventListener("click", () => {
+      rememberModeFilters();
       state.mode = button.dataset.mode;
+      applyModeFilters();
       state.pendingRoutineSwitch = null;
       render();
     });
   });
 
   els.daySelect.addEventListener("change", () => {
+    rememberModeFilters();
     state.day = els.daySelect.value;
     state.mode = "routine";
+    applyModeFilters();
     state.pendingRoutineSwitch = null;
     state.captureWorkflow = new Set([state.day, state.time].filter(Boolean));
     render();
   });
 
   els.timeSelect.addEventListener("change", () => {
+    rememberModeFilters();
     state.time = els.timeSelect.value;
     state.mode = "routine";
+    applyModeFilters();
     state.pendingRoutineSwitch = null;
     state.captureWorkflow = new Set([state.day, state.time].filter(Boolean));
     render();
@@ -243,6 +251,7 @@ function initializeControls() {
   els.switchRoutine.addEventListener("click", acceptRoutineSwitch);
 
   els.resetWorkflow.addEventListener("click", () => {
+    rememberModeFilters();
     state.day = dayName;
     state.time = state.workflowTags.includes(currentTimeTag())
       ? currentTimeTag()
@@ -250,6 +259,7 @@ function initializeControls() {
     els.daySelect.value = state.day;
     els.timeSelect.value = state.time;
     state.mode = "routine";
+    applyModeFilters();
     saveViewState();
     render();
   });
@@ -325,7 +335,7 @@ function render() {
     : state.mode === "free"
       ? "Free Time Queue"
       : state.mode === "delayed"
-        ? "Delayed Review"
+        ? "Review"
         : "Whole List";
   els.viewTitle.textContent = titleForMode();
   els.routineProgress.textContent = `${progressRoutineTasks.filter((task) => isTaskWorkedOn(task) || isTaskDelayed(task)).length}/${progressRoutineTasks.length}`;
@@ -345,6 +355,7 @@ function render() {
   renderConditionControls();
   renderWorkflowFilterControls();
   maybePromptForFreeTime(progressRoutineTasks, actionableRoutine);
+  rememberModeFilters();
   saveViewState();
 }
 
@@ -357,6 +368,36 @@ function syncControlState() {
   els.showBlocked.checked = state.showBlocked;
   els.freeDayFilter.checked = state.freeDayFilter;
   els.searchInput.value = state.search;
+}
+
+function rememberModeFilters() {
+  state.filtersByMode[state.mode] = {
+    requiredConditions: [...state.requiredConditions],
+    hiddenConditions: [...state.hiddenConditions],
+    requiredWorkflows: [...state.requiredWorkflows],
+    hiddenWorkflows: [...state.hiddenWorkflows],
+    search: state.search,
+    hideHandled: state.hideHandled,
+    showBlocked: state.showBlocked,
+    deadlineWindow: state.deadlineWindow,
+    deadlineOnlyActionable: state.deadlineOnlyActionable,
+    freeDayFilter: state.freeDayFilter,
+  };
+}
+
+function applyModeFilters() {
+  const filters = state.filtersByMode[state.mode] || defaultFilterState(state.mode);
+  state.filtersByMode[state.mode] = filters;
+  state.requiredConditions = new Set(filters.requiredConditions);
+  state.hiddenConditions = new Set(filters.hiddenConditions);
+  state.requiredWorkflows = new Set(filters.requiredWorkflows);
+  state.hiddenWorkflows = new Set(filters.hiddenWorkflows);
+  state.search = filters.search;
+  state.hideHandled = filters.hideHandled;
+  state.showBlocked = filters.showBlocked;
+  state.deadlineWindow = filters.deadlineWindow;
+  state.deadlineOnlyActionable = filters.deadlineOnlyActionable;
+  state.freeDayFilter = filters.freeDayFilter;
 }
 
 function getVisibleTasks() {
@@ -419,7 +460,37 @@ function getAllTasks() {
 
 function getDelayedTasks() {
   return state.tasks.filter((task) => {
-    return isLate(task) || isTaskDelayed(task) || latestHandlingAction(task) === "delayed";
+    return needsReview(task) && !isReviewCleared(task);
+  });
+}
+
+function needsReview(task) {
+  return isLate(task)
+    || isTaskDelayed(task)
+    || latestHandlingAction(task) === "delayed"
+    || reviewIssues(task).length > 0;
+}
+
+function reviewIssues(task) {
+  const issues = [];
+  if (!task.workflow.some((tag) => protectedWorkflowTags.includes(tag))) issues.push("Needs day");
+  if (!task.workflow.some((tag) => !protectedWorkflowTags.includes(tag))) issues.push("Needs workflow");
+  if (!task.status || task.status === "Unprioritized" || task.status === "Delayed") issues.push("Needs priority");
+  return issues;
+}
+
+function isReviewCleared(task) {
+  return task.reviewClearedSignature === reviewSignature(task);
+}
+
+function reviewSignature(task) {
+  return JSON.stringify({
+    late: isLate(task),
+    delayed: isTaskDelayed(task) || latestHandlingAction(task) === "delayed",
+    issues: reviewIssues(task),
+    status: task.status || "",
+    workflow: [...task.workflow].sort(),
+    deadline: task.deadline || "",
   });
 }
 
@@ -536,14 +607,40 @@ function cancelReorder() {
 function saveReorder() {
   if (!state.reorderMode) return;
   const visibleOrder = getVisibleTasks().map((task) => task.id);
-  const previous = state.savedOrders[state.reorderKey] || [];
-  state.savedOrders[state.reorderKey] = [
-    ...visibleOrder,
-    ...previous.filter((id) => !visibleOrder.includes(id)),
-  ];
+  saveOrderForKey(state.reorderKey, visibleOrder);
+  if (shouldOfferRoutineOrderCopy() && window.confirm(`Save for all ${titleCase(state.time)} workflows?`)) {
+    saveOrderForAllRoutineDays(visibleOrder);
+  }
   saveSavedOrders();
   resetReorderState();
   render();
+}
+
+function saveOrderForKey(key, visibleOrder) {
+  const previous = state.savedOrders[key] || [];
+  state.savedOrders[key] = [
+    ...visibleOrder,
+    ...previous.filter((id) => !visibleOrder.includes(id)),
+  ];
+}
+
+function shouldOfferRoutineOrderCopy() {
+  return state.reorderKey === currentOrderKey()
+    && state.mode === "routine"
+    && state.day
+    && state.time
+    && state.time !== "free time";
+}
+
+function saveOrderForAllRoutineDays(sourceOrder) {
+  protectedWorkflowTags.forEach((day) => {
+    const key = handlingKey(day, state.time);
+    const matchingTaskIds = sourceOrder.filter((id) => {
+      const task = state.tasks.find((item) => item.id === id);
+      return task && task.workflow.includes(day) && task.workflow.includes(state.time);
+    });
+    if (matchingTaskIds.length > 0) saveOrderForKey(key, matchingTaskIds);
+  });
 }
 
 function moveTaskInDraft(id, direction, visibleTasks) {
@@ -611,10 +708,13 @@ function renderTaskFeed(tasks) {
       ? `<div class="reorder-grip" aria-hidden="true">↕</div>`
       : `<button class="mini-toggle labeled ${isTaskWorkedOn(task) ? "active" : ""}" data-action="worked" title="Worked on" aria-label="Toggle worked on"><span>✓</span><strong>Worked on</strong></button>
         <button class="mini-toggle labeled delay ${isTaskDelayed(task) ? "active" : ""}" data-action="delayed" title="Not today" aria-label="Toggle not today"><span>!</span><strong>Not today</strong></button>`;
+    const reviewAction = state.mode === "delayed"
+      ? `<button class="icon-button" data-action="review-clear" title="No changes needed" aria-label="No changes needed for ${escapeHtml(task.task)}">✓</button>`
+      : "";
     const taskActions = state.reorderMode
       ? `<button class="icon-button" data-action="move-up" title="Move up" aria-label="Move ${escapeHtml(task.task)} up" ${index === 0 ? "disabled" : ""}>↑</button>
         <button class="icon-button" data-action="move-down" title="Move down" aria-label="Move ${escapeHtml(task.task)} down" ${index === tasks.length - 1 ? "disabled" : ""}>↓</button>`
-      : `<button class="icon-button" data-action="edit" title="Edit" aria-label="Edit ${escapeHtml(task.task)}">✎</button>
+      : `${reviewAction}<button class="icon-button" data-action="edit" title="Edit" aria-label="Edit ${escapeHtml(task.task)}">✎</button>
         <button class="icon-button" data-action="delete" title="Delete" aria-label="Delete">×</button>`;
     card.innerHTML = `
       <div class="task-checks">
@@ -627,6 +727,7 @@ function renderTaskFeed(tasks) {
           ${task.deadline ? `<span class="pill deadline">${deadlineLabel(task.deadline)}</span>` : ""}
           ${task.recurrence !== "none" ? `<span class="pill recurring">↻ ${recurrenceLabel(task)}</span>` : ""}
           ${task.blockedBy ? `<span class="pill blocked">Blocked</span>` : ""}
+          ${state.mode === "delayed" ? reviewIssues(task).map((issue) => `<span class="pill review">${issue}</span>`).join("") : ""}
           ${task.conditions.map((condition) => `<span class="pill">${condition}</span>`).join("")}
           ${task.workflow.map((tag) => `<span class="pill workflow">${titleCase(tag)}</span>`).join("")}
         </div>
@@ -644,6 +745,9 @@ function renderTaskFeed(tasks) {
       card.querySelector('[data-action="delayed"]').addEventListener("click", () => toggleTask(task.id, "delayed"));
       if (completionPrompt) {
         card.querySelector('[data-action="complete-delete"]').addEventListener("change", () => deleteTask(task.id));
+      }
+      if (state.mode === "delayed") {
+        card.querySelector('[data-action="review-clear"]').addEventListener("click", () => clearReview(task.id));
       }
       card.querySelector('[data-action="edit"]').addEventListener("click", () => openTaskEditor(task.id));
       card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteTask(task.id));
@@ -897,6 +1001,15 @@ function deleteTask(id) {
   render();
 }
 
+function clearReview(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  task.reviewClearedSignature = reviewSignature(task);
+  task.reviewClearedAt = new Date().toISOString();
+  saveTasks();
+  render();
+}
+
 function currentHandlingKey() {
   if (state.mode === "routine" || state.mode === "free") return handlingKey(state.day, state.time);
   return "global";
@@ -1021,43 +1134,81 @@ function loadSavedOrders() {
 }
 
 function loadViewState(settings, fallbackTime) {
+  const defaultFilters = defaultFiltersByMode();
   const fallback = {
     mode: "routine",
     day: dayName,
     time: fallbackTime,
+    filtersByMode: defaultFilters,
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(viewStorageKey));
+    if (!saved || typeof saved !== "object") return fallback;
+    const mode = ["routine", "free", "all", "delayed"].includes(saved.mode) ? saved.mode : fallback.mode;
+    return {
+      ...fallback,
+      mode,
+      day: protectedWorkflowTags.includes(saved.day) ? saved.day : fallback.day,
+      time: settings.workflowTags.includes(saved.time) ? saved.time : fallback.time,
+      filtersByMode: loadFiltersByMode(saved, settings, mode, defaultFilters),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function defaultFiltersByMode() {
+  return {
+    routine: defaultFilterState("routine"),
+    free: defaultFilterState("free"),
+    all: defaultFilterState("all"),
+    delayed: defaultFilterState("delayed"),
+  };
+}
+
+function defaultFilterState(mode) {
+  const showEverything = mode === "all" || mode === "delayed";
+  return {
     requiredConditions: [],
     hiddenConditions: [],
     requiredWorkflows: [],
     hiddenWorkflows: [],
     search: "",
-    hideHandled: true,
-    showBlocked: false,
+    hideHandled: !showEverything,
+    showBlocked: showEverything,
     deadlineWindow: 5,
     deadlineOnlyActionable: true,
     freeDayFilter: false,
   };
-  try {
-    const saved = JSON.parse(localStorage.getItem(viewStorageKey));
-    if (!saved || typeof saved !== "object") return fallback;
-    return {
-      ...fallback,
-      mode: ["routine", "free", "all", "delayed"].includes(saved.mode) ? saved.mode : fallback.mode,
-      day: protectedWorkflowTags.includes(saved.day) ? saved.day : fallback.day,
-      time: settings.workflowTags.includes(saved.time) ? saved.time : fallback.time,
-      requiredConditions: filterKnown(saved.requiredConditions, settings.conditions),
-      hiddenConditions: filterKnown(saved.hiddenConditions, settings.conditions),
-      requiredWorkflows: filterKnown(saved.requiredWorkflows, settings.workflowTags),
-      hiddenWorkflows: filterKnown(saved.hiddenWorkflows, settings.workflowTags),
-      search: typeof saved.search === "string" ? saved.search : "",
-      hideHandled: saved.hideHandled !== false,
-      showBlocked: Boolean(saved.showBlocked),
-      deadlineWindow: Number.isFinite(saved.deadlineWindow) ? saved.deadlineWindow : fallback.deadlineWindow,
-      deadlineOnlyActionable: saved.deadlineOnlyActionable !== false,
-      freeDayFilter: Boolean(saved.freeDayFilter),
-    };
-  } catch {
-    return fallback;
+}
+
+function loadFiltersByMode(saved, settings, activeMode, defaults) {
+  const loaded = { ...defaults };
+  if (saved.filtersByMode && typeof saved.filtersByMode === "object" && !Array.isArray(saved.filtersByMode)) {
+    ["routine", "free", "all", "delayed"].forEach((mode) => {
+      loaded[mode] = normalizeFilterState(saved.filtersByMode[mode], settings, defaults[mode]);
+    });
+    return loaded;
   }
+  loaded[activeMode] = normalizeFilterState(saved, settings, defaults[activeMode]);
+  if (activeMode === "all") loaded.all = defaultFilterState("all");
+  return loaded;
+}
+
+function normalizeFilterState(value, settings, fallback) {
+  if (!value || typeof value !== "object") return { ...fallback };
+  return {
+    requiredConditions: filterKnown(value.requiredConditions, settings.conditions),
+    hiddenConditions: filterKnown(value.hiddenConditions, settings.conditions),
+    requiredWorkflows: filterKnown(value.requiredWorkflows, settings.workflowTags),
+    hiddenWorkflows: filterKnown(value.hiddenWorkflows, settings.workflowTags),
+    search: typeof value.search === "string" ? value.search : fallback.search,
+    hideHandled: typeof value.hideHandled === "boolean" ? value.hideHandled : fallback.hideHandled,
+    showBlocked: typeof value.showBlocked === "boolean" ? value.showBlocked : fallback.showBlocked,
+    deadlineWindow: Number.isFinite(value.deadlineWindow) ? value.deadlineWindow : fallback.deadlineWindow,
+    deadlineOnlyActionable: typeof value.deadlineOnlyActionable === "boolean" ? value.deadlineOnlyActionable : fallback.deadlineOnlyActionable,
+    freeDayFilter: typeof value.freeDayFilter === "boolean" ? value.freeDayFilter : fallback.freeDayFilter,
+  };
 }
 
 function saveViewState() {
@@ -1065,16 +1216,7 @@ function saveViewState() {
     mode: state.mode,
     day: state.day,
     time: state.time,
-    requiredConditions: [...state.requiredConditions],
-    hiddenConditions: [...state.hiddenConditions],
-    requiredWorkflows: [...state.requiredWorkflows],
-    hiddenWorkflows: [...state.hiddenWorkflows],
-    search: state.search,
-    hideHandled: state.hideHandled,
-    showBlocked: state.showBlocked,
-    deadlineWindow: state.deadlineWindow,
-    deadlineOnlyActionable: state.deadlineOnlyActionable,
-    freeDayFilter: state.freeDayFilter,
+    filtersByMode: state.filtersByMode,
   }));
 }
 
@@ -1214,11 +1356,24 @@ function deleteManagedTag(kind, value) {
   }
   state.requiredWorkflows.delete(value);
   state.hiddenWorkflows.delete(value);
+  removeTagFromSavedFilters(kind, value);
   saveSettings();
   saveTasks();
   renderCaptureChips();
   renderTagManager();
   render();
+}
+
+function removeTagFromSavedFilters(kind, value) {
+  Object.values(state.filtersByMode).forEach((filters) => {
+    if (kind === "workflow") {
+      filters.requiredWorkflows = filters.requiredWorkflows.filter((tag) => tag !== value);
+      filters.hiddenWorkflows = filters.hiddenWorkflows.filter((tag) => tag !== value);
+    } else {
+      filters.requiredConditions = filters.requiredConditions.filter((condition) => condition !== value);
+      filters.hiddenConditions = filters.hiddenConditions.filter((condition) => condition !== value);
+    }
+  });
 }
 
 function notionTasks() {
@@ -1238,6 +1393,8 @@ function makeTask(task, conditionsList, status, deadline, workflow, delayed = fa
     lastCheckboxAction: "",
     lastCheckboxAt: "",
     handledStates: {},
+    reviewClearedAt: "",
+    reviewClearedSignature: "",
     task,
     conditions: conditionsList,
     status,
@@ -1267,6 +1424,8 @@ function normalizeTask(task) {
     lastCheckboxAction: task.lastCheckboxAction || (task.delayed ? "delayed" : task.workedOn ? "workedOn" : ""),
     lastCheckboxAt: task.lastCheckboxAt || "",
     handledStates,
+    reviewClearedAt: task.reviewClearedAt || "",
+    reviewClearedSignature: task.reviewClearedSignature || "",
     stackMissed: Boolean(task.stackMissed),
   };
 }
@@ -1389,7 +1548,7 @@ function currentTimeTag() {
 function titleForMode() {
   if (state.mode === "routine") return `${titleCase(state.time)} Routine`;
   if (state.mode === "free") return "Free Time Queue";
-  if (state.mode === "delayed") return "Delayed Review";
+  if (state.mode === "delayed") return "Review";
   if (state.mode === "all") return "All Tasks";
   return "All Tasks";
 }
