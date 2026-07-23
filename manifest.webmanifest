@@ -1,7 +1,7 @@
 {
   "name": "donext",
   "short_name": "donext",
-  "description": "Build routines and choose what to do next.",
+  "description": "Big task list & workflows.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

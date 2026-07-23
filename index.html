@@ -17,6 +17,7 @@
           <div class="brand-mark">do</div>
           <div>
             <h1>donext</h1>
+            <p class="app-subtitle">big task list &amp; workflows</p>
             <p id="todayLabel"></p>
           </div>
         </div>
@@ -204,11 +205,15 @@
             </div>
             <label>
               Blocked by
-              <select id="blockedByInput"></select>
+              <select id="blockedByInput" multiple></select>
             </label>
             <label>
               Blocking
-              <select id="blockingInput"></select>
+              <select id="blockingInput" multiple></select>
+            </label>
+            <label class="advanced-check">
+              <input id="showLastWorkedOnInput" type="checkbox" />
+              <span>Show when last marked as worked on</span>
             </label>
           </div>
         </details>

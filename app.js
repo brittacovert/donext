@@ -160,6 +160,7 @@ function cacheElements() {
     "stackMissedInput",
     "blockedByInput",
     "blockingInput",
+    "showLastWorkedOnInput",
     "workflowInput",
     "conditionInput",
     "tagDialog",
@@ -409,7 +410,7 @@ function getVisibleTasks() {
         ? getDelayedTasks()
         : getAllTasks();
   const filtered = base
-    .filter((task) => state.showBlocked || !task.blockedBy)
+    .filter((task) => state.mode === "delayed" || state.showBlocked || !isBlocked(task))
     .filter((task) => !state.hideHandled || (!isTaskWorkedOn(task) && !isTaskDelayed(task)) || shouldPromptCompletion(task))
     .filter((task) => workflowMatch(task))
     .filter((task) => conditionMatch(task))
@@ -423,7 +424,8 @@ function getVisibleTasks() {
   const order = state.reorderMode && state.reorderKey === key
     ? state.draftOrder
     : state.savedOrders[key] || [];
-  return moveHandledTasksToBottom(applyTaskOrder(sorted, order));
+  const ordered = applyTaskOrder(sorted, order);
+  return state.reorderMode ? ordered : moveHandledTasksToBottom(ordered);
 }
 
 function getRoutineTasks({ includeHandled }) {
@@ -441,7 +443,7 @@ function isRoutineTaskActionable(task) {
 }
 
 function isRoutineTaskVisible(task) {
-  return (state.showBlocked || !task.blockedBy)
+  return (state.showBlocked || !isBlocked(task))
     && conditionMatch(task)
     && searchMatch(task);
 }
@@ -465,7 +467,8 @@ function getDelayedTasks() {
 }
 
 function needsReview(task) {
-  return isLate(task)
+  return isBlockingLoopTask(task)
+    || isLate(task)
     || isTaskDelayed(task)
     || latestHandlingAction(task) === "delayed"
     || reviewIssues(task).length > 0;
@@ -476,6 +479,7 @@ function reviewIssues(task) {
   if (!task.workflow.some((tag) => protectedWorkflowTags.includes(tag))) issues.push("Needs day");
   if (!task.workflow.some((tag) => !protectedWorkflowTags.includes(tag))) issues.push("Needs workflow");
   if (!task.status || task.status === "Unprioritized" || task.status === "Delayed") issues.push("Needs priority");
+  if (isBlockingLoopTask(task)) issues.push("Blocking loop");
   return issues;
 }
 
@@ -487,10 +491,13 @@ function reviewSignature(task) {
   return JSON.stringify({
     late: isLate(task),
     delayed: isTaskDelayed(task) || latestHandlingAction(task) === "delayed",
+    blockingLoop: isBlockingLoopTask(task),
     issues: reviewIssues(task),
     status: task.status || "",
     workflow: [...task.workflow].sort(),
     deadline: task.deadline || "",
+    blockedBy: blockedByIds(task).sort(),
+    blocking: [...task.blocking].sort(),
   });
 }
 
@@ -520,7 +527,8 @@ function taskSort(a, b) {
 }
 
 function delayedTaskSort(a, b) {
-  return Number(!isLate(a)) - Number(!isLate(b))
+  return Number(!isBlockingLoopTask(a)) - Number(!isBlockingLoopTask(b))
+    || Number(!isLate(a)) - Number(!isLate(b))
     || dateRank(a.deadline) - dateRank(b.deadline)
     || lastActionRank(b) - lastActionRank(a)
     || taskSort(a, b);
@@ -664,7 +672,7 @@ function resetReorderState() {
 }
 
 function getDeadlineTasks(tasks) {
-  const source = state.deadlineOnlyActionable ? tasks : state.tasks.filter((task) => !task.blockedBy);
+  const source = state.deadlineOnlyActionable ? tasks : state.tasks.filter((task) => !isBlocked(task));
   return source
     .filter((task) => task.deadline)
     .map((task) => ({ ...task, daysLeft: daysUntil(task.deadline) }))
@@ -726,8 +734,9 @@ function renderTaskFeed(tasks) {
           ${showStatusTag ? `<span class="pill status">${escapeHtml(statusLabel(task.status))}</span>` : ""}
           ${task.deadline ? `<span class="pill deadline">${deadlineLabel(task.deadline)}</span>` : ""}
           ${task.recurrence !== "none" ? `<span class="pill recurring">↻ ${recurrenceLabel(task)}</span>` : ""}
-          ${task.blockedBy ? `<span class="pill blocked">Blocked</span>` : ""}
+          ${isBlocked(task) ? `<span class="pill blocked">Blocked</span>` : ""}
           ${state.mode === "delayed" ? reviewIssues(task).map((issue) => `<span class="pill review">${issue}</span>`).join("") : ""}
+          ${task.showLastWorkedOn && lastWorkedOnDate(task) ? `<span class="pill last-worked">Last worked on: ${formatIsoDate(lastWorkedOnDate(task))}</span>` : ""}
           ${task.conditions.map((condition) => `<span class="pill">${condition}</span>`).join("")}
           ${task.workflow.map((tag) => `<span class="pill workflow">${titleCase(tag)}</span>`).join("")}
         </div>
@@ -846,7 +855,8 @@ function openCapture() {
   els.deadlineInput.value = "";
   els.recurrenceInput.value = "none";
   els.stackMissedInput.checked = false;
-  renderDependencyOptions("", "");
+  els.showLastWorkedOnInput.checked = false;
+  renderDependencyOptions([], []);
   els.advancedSettings.open = false;
   syncRecurrenceInput();
   els.captureEyebrow.textContent = "Quick Capture";
@@ -868,7 +878,8 @@ function openTaskEditor(id) {
   els.deadlineInput.value = task.deadline || task.nextOccurrence;
   els.recurrenceInput.value = task.recurrence;
   els.stackMissedInput.checked = task.stackMissed;
-  renderDependencyOptions(task.blockedBy, task.blocking[0] || "");
+  els.showLastWorkedOnInput.checked = Boolean(task.showLastWorkedOn);
+  renderDependencyOptions(blockedByIds(task), task.blocking);
   els.advancedSettings.open = false;
   syncRecurrenceInput();
   els.captureEyebrow.textContent = "Edit Task";
@@ -892,28 +903,29 @@ function syncRecurrenceInput() {
   }
 }
 
-function renderDependencyOptions(blockedById, blockingId) {
+function renderDependencyOptions(blockedByIdsValue, blockingIdsValue) {
   const currentId = state.editingTaskId;
   const options = state.tasks
     .filter((task) => task.id !== currentId)
     .sort((a, b) => a.task.localeCompare(b.task));
-  fillTaskSelect(els.blockedByInput, "Not blocked", options, blockedById);
-  fillTaskSelect(els.blockingInput, "Not blocking", options, blockingId);
+  fillTaskSelect(els.blockedByInput, options, blockedByIdsValue);
+  fillTaskSelect(els.blockingInput, options, blockingIdsValue);
 }
 
-function fillTaskSelect(select, emptyLabel, tasks, selectedId) {
+function fillTaskSelect(select, tasks, selectedIds) {
+  const selected = new Set(selectedIds || []);
   select.innerHTML = "";
-  const empty = document.createElement("option");
-  empty.value = "";
-  empty.textContent = emptyLabel;
-  select.append(empty);
   tasks.forEach((task) => {
     const option = document.createElement("option");
     option.value = task.id;
     option.textContent = task.task;
+    option.selected = selected.has(task.id);
     select.append(option);
   });
-  select.value = selectedId || "";
+}
+
+function selectedValues(select) {
+  return [...select.selectedOptions].map((option) => option.value).filter(Boolean);
 }
 
 function saveCapturedTask(event) {
@@ -923,11 +935,10 @@ function saveCapturedTask(event) {
     : null;
   const recurrence = els.recurrenceInput.value;
   const deadline = els.deadlineInput.value;
-  const blockedById = els.blockedByInput.value;
-  const blockingId = els.blockingInput.value;
-  els.blockingInput.setCustomValidity(blockedById && blockedById === blockingId
-    ? "A task cannot block and be blocked by the same task."
-    : "");
+  const blockedByIdsValue = selectedValues(els.blockedByInput);
+  const blockingIdsValue = selectedValues(els.blockingInput);
+  const overlap = blockedByIdsValue.some((id) => blockingIdsValue.includes(id));
+  els.blockingInput.setCustomValidity(overlap ? "A task cannot block and be blocked by the same task." : "");
   if (!els.captureForm.reportValidity()) return;
   const values = {
     task: els.taskInput.value.trim(),
@@ -937,6 +948,7 @@ function saveCapturedTask(event) {
     recurrence,
     nextOccurrence: recurrence === "none" ? "" : deadline || existingTask?.nextOccurrence || todayIso,
     stackMissed: recurrence !== "none" && els.stackMissedInput.checked,
+    showLastWorkedOn: els.showLastWorkedOnInput.checked,
     workflow: [...state.captureWorkflow],
   };
   if (!values.task) return;
@@ -950,14 +962,14 @@ function saveCapturedTask(event) {
       id: crypto.randomUUID(),
       workedOn: false,
       delayed: false,
-      blockedBy: "",
+      blockedBy: [],
       blocking: [],
       lastCompleted: "",
       ...values,
     };
     state.tasks.push(savedTask);
   }
-  syncTaskRelations(savedTask, blockedById, blockingId);
+  syncTaskRelations(savedTask, blockedByIdsValue, blockingIdsValue);
   saveTasks();
   els.captureDialog.close();
   render();
@@ -990,7 +1002,7 @@ function toggleTask(id, key) {
 function deleteTask(id) {
   state.tasks.forEach((task) => {
     task.blocking = task.blocking.filter((blockedId) => blockedId !== id);
-    if (task.blockedBy === id) task.blockedBy = "";
+    task.blockedBy = blockedByIds(task).filter((blockedId) => blockedId !== id);
   });
   state.tasks = state.tasks.filter((task) => task.id !== id);
   Object.keys(state.savedOrders).forEach((key) => {
@@ -1057,6 +1069,38 @@ function latestHandlingAction(task) {
   return latestHandlingRecord(task)?.action || "";
 }
 
+function blockedByIds(task) {
+  if (Array.isArray(task.blockedBy)) return task.blockedBy.filter(Boolean);
+  return task.blockedBy ? [task.blockedBy] : [];
+}
+
+function isBlocked(task) {
+  return blockedByIds(task).length > 0;
+}
+
+function isBlockingLoopTask(task) {
+  return blockedByIds(task).some((blockerId) => reachesTask(blockerId, task.id, new Set([task.id])));
+}
+
+function reachesTask(currentId, targetId, seen) {
+  if (currentId === targetId) return true;
+  if (seen.has(currentId)) return false;
+  seen.add(currentId);
+  const current = state.tasks.find((task) => task.id === currentId);
+  if (!current) return false;
+  return blockedByIds(current).some((nextId) => reachesTask(nextId, targetId, seen));
+}
+
+function lastWorkedOnDate(task) {
+  const workedRecords = Object.values(task.handledStates || {})
+    .filter((record) => record?.workedOn && record.at)
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  if (workedRecords.length) return workedRecords[0].at.slice(0, 10);
+  if (task.lastCheckboxAction === "workedOn" && task.lastCheckboxAt) return task.lastCheckboxAt.slice(0, 10);
+  if (task.lastCompleted) return task.lastCompleted;
+  return "";
+}
+
 function setHandlingState(task, key, value) {
   if (!task.handledStates || typeof task.handledStates !== "object" || Array.isArray(task.handledStates)) {
     task.handledStates = {};
@@ -1084,28 +1128,29 @@ function setHandlingState(task, key, value) {
   task.lastCheckboxAt = latestHandlingRecord(task)?.at || "";
 }
 
-function syncTaskRelations(task, blockedById, blockingId) {
+function syncTaskRelations(task, blockedByIdsValue, blockingIdsValue) {
+  const blockedBySet = new Set(blockedByIdsValue);
+  const blockingSet = new Set(blockingIdsValue);
   state.tasks.forEach((item) => {
     item.blocking = item.blocking.filter((blockedId) => blockedId !== task.id);
-    if (item.blockedBy === task.id) item.blockedBy = "";
+    item.blockedBy = blockedByIds(item).filter((blockedId) => blockedId !== task.id);
   });
-  task.blockedBy = "";
+  task.blockedBy = [];
   task.blocking = [];
 
-  const blocker = state.tasks.find((item) => item.id === blockedById);
-  if (blocker) {
-    task.blockedBy = blocker.id;
+  blockedBySet.forEach((id) => {
+    const blocker = state.tasks.find((item) => item.id === id);
+    if (!blocker) return;
+    if (!task.blockedBy.includes(blocker.id)) task.blockedBy.push(blocker.id);
     if (!blocker.blocking.includes(task.id)) blocker.blocking.push(task.id);
-  }
+  });
 
-  const blockedTask = state.tasks.find((item) => item.id === blockingId);
-  if (blockedTask) {
-    state.tasks.forEach((item) => {
-      item.blocking = item.blocking.filter((blockedId) => blockedId !== blockedTask.id);
-    });
-    blockedTask.blockedBy = task.id;
-    task.blocking.push(blockedTask.id);
-  }
+  blockingSet.forEach((id) => {
+    const blockedTask = state.tasks.find((item) => item.id === id);
+    if (!blockedTask) return;
+    blockedTask.blockedBy = uniqueValues([...blockedByIds(blockedTask), task.id]);
+    if (!task.blocking.includes(blockedTask.id)) task.blocking.push(blockedTask.id);
+  });
 }
 
 function loadTasks() {
@@ -1377,11 +1422,11 @@ function removeTagFromSavedFilters(kind, value) {
 }
 
 function notionTasks() {
-  return notionTaskData.map((task) => ({
+  return notionTaskData.map((task) => normalizeTask({
     ...task,
-    conditions: [...task.conditions],
-    workflow: [...task.workflow],
-    blocking: [...task.blocking],
+    conditions: Array.isArray(task.conditions) ? [...task.conditions] : [],
+    workflow: Array.isArray(task.workflow) ? [...task.workflow] : [],
+    blocking: Array.isArray(task.blocking) ? [...task.blocking] : [],
   }));
 }
 
@@ -1399,7 +1444,7 @@ function makeTask(task, conditionsList, status, deadline, workflow, delayed = fa
     conditions: conditionsList,
     status,
     deadline,
-    blockedBy: "",
+    blockedBy: [],
     blocking: [],
     workflow,
     recurrence: "none",
@@ -1415,6 +1460,7 @@ function normalizeTask(task) {
     ...task,
     conditions: Array.isArray(task.conditions) ? task.conditions : [],
     workflow: Array.isArray(task.workflow) ? task.workflow : [],
+    blockedBy: blockedByIds(task),
     blocking: Array.isArray(task.blocking) ? task.blocking : [],
     status: task.status || "Unprioritized",
     recurrence: task.recurrence || "none",
@@ -1426,6 +1472,7 @@ function normalizeTask(task) {
     handledStates,
     reviewClearedAt: task.reviewClearedAt || "",
     reviewClearedSignature: task.reviewClearedSignature || "",
+    showLastWorkedOn: Boolean(task.showLastWorkedOn),
     stackMissed: Boolean(task.stackMissed),
   };
 }
@@ -1736,6 +1783,10 @@ function deadlineLabel(value) {
   if (days === 0) return "today";
   if (days === 1) return "tomorrow";
   return `${days} days`;
+}
+
+function formatIsoDate(value) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function occurrenceLabel(value) {

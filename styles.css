@@ -93,6 +93,18 @@ h1 {
   color: var(--muted);
 }
 
+.app-subtitle {
+  margin-top: 2px;
+  color: #44534a;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+#todayLabel {
+  margin-top: 3px;
+  font-size: 0.78rem;
+}
+
 .panel {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--line);
@@ -581,6 +593,11 @@ h2 {
   color: #526157;
 }
 
+.pill.last-worked {
+  background: #e8f3ed;
+  color: #2f6d4d;
+}
+
 .pill.recurring {
   background: #e8eef7;
   color: #3f5f82;
@@ -667,6 +684,27 @@ h2 {
 
 .advanced-fields .field-title {
   margin-bottom: 8px;
+}
+
+.advanced-fields select[multiple] {
+  min-height: 108px;
+  padding: 8px;
+}
+
+.advanced-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  color: #3e4b44;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.advanced-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--leaf);
 }
 
 .behavior-toggle {
