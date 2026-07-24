@@ -1,6 +1,6 @@
 {
-  "name": "donext",
-  "short_name": "donext",
+  "name": "batl plan",
+  "short_name": "batl plan",
   "description": "Big task list & workflows.",
   "start_url": "./index.html",
   "scope": "./",
@@ -9,13 +9,13 @@
   "theme_color": "#20734a",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "icon-192.png?v=20260723",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "icon-512.png",
+      "src": "icon-512.png?v=20260723",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
