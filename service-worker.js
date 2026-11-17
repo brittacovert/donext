@@ -1,4 +1,4 @@
-const cacheName = "donext-personal-v13";
+const cacheName = "batl-plan-v14";
 const appFiles = [
   "./",
   "./index.html",

@@ -36,7 +36,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -155,6 +156,24 @@ h1 {
   padding: 4px;
   background: #e6ece4;
   border-radius: 8px;
+}
+
+.mode-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.mode-grid .segment[data-mode="routine"] {
+  grid-column: 1;
+}
+
+.mode-grid .segment[data-mode="highlights"] {
+  grid-column: 2 / 4;
+}
+
+.mobile-filters-toggle {
+  display: none;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .segment {
@@ -286,6 +305,7 @@ h2 {
 
 .primary-button,
 .ghost-button,
+.danger-button,
 .text-button,
 .icon-button {
   border-radius: 8px;
@@ -304,6 +324,16 @@ h2 {
   background: white;
   border-color: var(--line);
   color: #334039;
+}
+
+.danger-button {
+  min-height: 40px;
+  border: 1px solid #d9a49e;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fff5f3;
+  color: var(--red);
+  font-weight: 800;
 }
 
 .text-button {
@@ -439,8 +469,42 @@ h2 {
   border: 1px solid var(--line);
   border-left: 5px solid var(--status-color, #7a837e);
   border-radius: 8px;
-  padding: 14px;
+  padding: 10px 12px;
   box-shadow: 0 1px 0 rgba(20, 28, 23, 0.03);
+}
+
+.task-card.select-card {
+  cursor: pointer;
+}
+
+.task-card.selected {
+  background: #f0f8f3;
+  border-color: #8cbca0;
+}
+
+.selection-check {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  min-height: 42px;
+}
+
+.selection-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--leaf);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .task-card.status-current-habit {
@@ -561,6 +625,10 @@ h2 {
   margin-top: 8px;
 }
 
+.task-meta:empty {
+  display: none;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -612,6 +680,160 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.review-clear-button {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 10px;
+  border: 1px solid #b9c8bd;
+  border-radius: 7px;
+  background: #f4f7f2;
+  color: #3d5145;
+  font-weight: 800;
+}
+
+.bulk-bar {
+  position: sticky;
+  top: 10px;
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #9fbaa9;
+  border-radius: 8px;
+  background: #f7fbf8;
+  box-shadow: 0 8px 24px rgba(42, 55, 47, 0.12);
+}
+
+.bulk-bar strong {
+  margin-right: auto;
+}
+
+.special-view {
+  min-width: 0;
+}
+
+.highlight-composer {
+  position: sticky;
+  top: 10px;
+  z-index: 10;
+  display: grid;
+  gap: 9px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #b8cdbd;
+  border-radius: 8px;
+  background: #f7fbf8;
+  box-shadow: 0 8px 24px rgba(42, 55, 47, 0.1);
+}
+
+.highlight-composer textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+  color: var(--ink);
+}
+
+.highlight-actions,
+.path-toolbar,
+.path-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.highlight-actions {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.highlight-card {
+  cursor: grab;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 9px;
+  font-size: 0.76rem;
+}
+
+.small-dialog {
+  width: min(580px, calc(100vw - 28px));
+}
+
+.recurring-delete-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.path-toolbar {
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.path-toolbar label {
+  min-width: min(300px, 100%);
+  flex: 1;
+}
+
+.path-help {
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.path-canvas {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+}
+
+.path-node {
+  --status-color: #7a837e;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(680px, 100%);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--status-color);
+  border-radius: 8px;
+  padding: 12px;
+  background: white;
+  cursor: grab;
+}
+
+.path-node.status-current-habit { --status-color: #2f7d55; }
+.path-node.status-current-project { --status-color: #2d6f9f; }
+.path-node.status-necessary-project { --status-color: #b7463f; }
+.path-node.status-goal-habit { --status-color: #7657a0; }
+.path-node.status-potential-project { --status-color: #b58526; }
+
+.path-node small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.path-node-grip {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.path-insert {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 54px;
+  color: #7b8b81;
 }
 
 .complete-prompt {
@@ -817,6 +1039,16 @@ h2 {
     border-bottom: 1px solid var(--line);
   }
 
+  .mobile-filters-toggle {
+    display: block;
+  }
+
+  .sidebar:not(.filters-open) #workflowPanel,
+  .sidebar:not(.filters-open) #conditionPanel,
+  .sidebar:not(.filters-open) #deadlinePanel {
+    display: none;
+  }
+
   .topbar,
   .toolbar {
     align-items: stretch;
@@ -856,7 +1088,9 @@ h2 {
   }
 
   .task-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
   }
 
   .task-card.reorder-card {
@@ -867,8 +1101,47 @@ h2 {
 
   .task-checks,
   .task-actions {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    align-content: start;
+    gap: 5px;
+  }
+
+  .mini-toggle.labeled {
+    min-width: 88px;
+    padding-right: 5px;
+    font-size: 0.68rem;
+  }
+
+  .task-actions .icon-button {
+    width: 34px;
+    min-height: 34px;
+  }
+
+  .bulk-bar .ghost-button,
+  .bulk-bar .danger-button {
+    flex: 1 1 44%;
+  }
+
+  .path-toolbar,
+  .highlight-actions,
+  .recurring-delete-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .path-toolbar button,
+  .highlight-actions button,
+  .recurring-delete-actions button {
+    width: 100%;
+  }
+
+  .path-node {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .path-node-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
 
   .task-card.reorder-card .task-checks,
