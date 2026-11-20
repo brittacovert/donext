@@ -109,6 +109,10 @@ let state = {
   pathNameMode: "create",
   pendingPathInsertIndex: 0,
   pendingPathId: "",
+  expandedTaskIds: new Set(),
+  workflowDrawerOpen: false,
+  moreOptionsOpen: false,
+  showFilters: false,
   savedOrders: loadSavedOrders(),
   tasks: loadTasks(),
 };
@@ -147,6 +151,7 @@ function cacheElements() {
     "progressMetric",
     "deadlineCount",
     "visibleCount",
+    "handledCount",
     "deadlineBand",
     "deadlineList",
     "searchInput",
@@ -175,6 +180,7 @@ function cacheElements() {
     "blockedByInput",
     "blockingInput",
     "showLastWorkedOnInput",
+    "addToHighlightsInput",
     "workflowInput",
     "conditionInput",
     "tagDialog",
@@ -195,7 +201,15 @@ function cacheElements() {
     "workflowPanel",
     "conditionPanel",
     "deadlinePanel",
-    "highlightShortcut",
+    "appNav",
+    "routineMenuButton",
+    "routineButtonLabel",
+    "secondaryNav",
+    "closeWorkflowDrawer",
+    "moreOptionsButton",
+    "moreOptionsDrawer",
+    "closeMoreOptions",
+    "showFilters",
     "showDetails",
     "startSelect",
     "bulkBar",
@@ -226,7 +240,6 @@ function cacheElements() {
     "cancelBulkTags",
     "bulkWorkflowInput",
     "bulkConditionInput",
-    "mobileFiltersToggle",
     "pathNameDialog",
     "pathNameForm",
     "pathNameTitle",
@@ -272,14 +285,40 @@ function initializeControls() {
 
   document.querySelectorAll(".segment").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.mode === "routine" && state.mode === "routine") {
+        state.workflowDrawerOpen = !state.workflowDrawerOpen;
+        state.moreOptionsOpen = false;
+        renderNavDrawers();
+        return;
+      }
       rememberModeFilters();
       state.mode = button.dataset.mode;
       if (["routine", "free", "all", "delayed"].includes(state.mode)) applyModeFilters();
       endSelection();
       state.pendingRoutineSwitch = null;
       if (state.mode === "highlights") maybePromptHighlightRefresh();
+      state.workflowDrawerOpen = state.mode === "routine";
+      state.moreOptionsOpen = false;
       render();
     });
+  });
+
+  els.moreOptionsButton.addEventListener("click", () => {
+    state.moreOptionsOpen = !state.moreOptionsOpen;
+    state.workflowDrawerOpen = false;
+    renderNavDrawers();
+  });
+  els.closeWorkflowDrawer.addEventListener("click", () => {
+    state.workflowDrawerOpen = false;
+    renderNavDrawers();
+  });
+  els.closeMoreOptions.addEventListener("click", () => {
+    state.moreOptionsOpen = false;
+    renderNavDrawers();
+  });
+  els.showFilters.addEventListener("change", () => {
+    state.showFilters = els.showFilters.checked;
+    renderNavDrawers();
   });
 
   els.daySelect.addEventListener("change", () => {
@@ -366,13 +405,6 @@ function initializeControls() {
     state.showDetailsByMode[state.mode] = els.showDetails.checked;
     render();
   });
-  els.highlightShortcut.addEventListener("click", () => {
-    rememberModeFilters();
-    state.mode = "highlights";
-    endSelection();
-    maybePromptHighlightRefresh();
-    render();
-  });
   els.startSelect.addEventListener("click", () => {
     state.selectMode = true;
     state.selectedTaskIds.clear();
@@ -405,7 +437,7 @@ function initializeControls() {
   els.deleteSeries.addEventListener("click", deletePendingSeries);
   els.highlightNote.addEventListener("input", () => {
     state.highlights.note = els.highlightNote.value;
-    saveHighlights();
+    markHighlightsEdited();
   });
   els.refreshHighlights.addEventListener("click", () => refreshHighlights(true));
   els.pathSelect.addEventListener("change", () => {
@@ -421,10 +453,16 @@ function initializeControls() {
   els.cancelPathChooser.addEventListener("click", () => els.pathChooserDialog.close());
   els.pathTaskForm.addEventListener("submit", saveInsertedPathTask);
   els.cancelPathTask.addEventListener("click", () => els.pathTaskDialog.close());
-  els.mobileFiltersToggle.addEventListener("click", () => {
-    document.querySelector(".sidebar").classList.toggle("filters-open");
-    els.mobileFiltersToggle.textContent = document.querySelector(".sidebar").classList.contains("filters-open") ? "Hide filters" : "Filters";
-  });
+  let lastScrollY = window.scrollY;
+  window.addEventListener("scroll", () => {
+    const currentY = window.scrollY;
+    if (!state.workflowDrawerOpen && !state.moreOptionsOpen && currentY > 110 && currentY > lastScrollY + 4) {
+      els.appNav.classList.add("secondary-hidden");
+    } else if (currentY < lastScrollY - 4 || currentY < 60) {
+      els.appNav.classList.remove("secondary-hidden");
+    }
+    lastScrollY = currentY;
+  }, { passive: true });
   renderConditionControls();
   renderWorkflowFilterControls();
   renderCaptureChips();
@@ -464,24 +502,17 @@ function render() {
   els.routineProgress.textContent = `${progressRoutineTasks.filter((task) => isTaskWorkedOn(task) || isTaskDelayed(task)).length}/${progressRoutineTasks.length}`;
   els.deadlineCount.textContent = deadlineTasks.length;
   els.visibleCount.textContent = viewTasks.length;
-  els.deadlineWindowLabel.textContent = `${state.deadlineWindow}d`;
-  els.routineSelectors.hidden = state.mode === "all" || state.mode === "delayed" || specialMode;
+  els.handledCount.textContent = specialMode ? "0" : String(getHandledCountForMode());
+  els.deadlineWindowLabel.textContent = `${state.deadlineWindow} day${state.deadlineWindow === 1 ? "" : "s"}`;
+  els.routineButtonLabel.textContent = routineButtonLabel();
+  els.routineSelectors.hidden = false;
   els.daySelect.closest("label").hidden = state.mode === "routine" && isCustomWorkflow(state.time);
-  els.workflowFilterGroup.hidden = state.mode === "routine" || state.mode === "free" || specialMode;
-  els.progressMetric.hidden = state.mode === "all" || state.mode === "delayed" || specialMode;
   els.freeDayFilterRow.hidden = state.mode !== "free";
-  els.workflowPanel.hidden = specialMode;
-  els.conditionPanel.hidden = specialMode;
-  els.deadlinePanel.hidden = specialMode;
   els.taskFeed.hidden = specialMode;
   els.highlightsView.hidden = state.mode !== "highlights";
   els.pathsView.hidden = state.mode !== "paths";
-  els.statusStrip = els.statusStrip || document.querySelector(".status-strip");
-  els.statusStrip.hidden = specialMode;
   els.deadlineBand.hidden = specialMode || deadlineTasks.length === 0;
-  document.querySelector(".toolbar").hidden = specialMode;
   els.openCapture.hidden = state.mode === "paths";
-  els.highlightShortcut.hidden = state.mode === "highlights";
   els.startReorder.hidden = state.reorderMode || state.selectMode;
   els.startReorder.disabled = viewTasks.length < 2;
   els.reorderActions.hidden = !state.reorderMode;
@@ -489,6 +520,8 @@ function render() {
   els.bulkBar.hidden = !state.selectMode || specialMode;
   els.selectionCount.textContent = `${state.selectedTaskIds.size} selected`;
   els.showDetails.checked = Boolean(state.showDetailsByMode[state.mode]);
+  els.showFilters.checked = state.showFilters;
+  renderNavDrawers();
 
   if (!specialMode) {
     renderDeadlineBand(deadlineTasks);
@@ -501,6 +534,20 @@ function render() {
   if (!specialMode) maybePromptForFreeTime(progressRoutineTasks, actionableRoutine);
   if (["routine", "free", "all", "delayed"].includes(state.mode)) rememberModeFilters();
   saveViewState();
+}
+
+function routineButtonLabel() {
+  const workflow = titleCase(state.time || "routine");
+  return isCustomWorkflow(state.time) ? workflow : `${titleCase(state.day)} ${workflow}`;
+}
+
+function renderNavDrawers() {
+  els.workflowPanel.hidden = !state.workflowDrawerOpen;
+  els.moreOptionsDrawer.hidden = !state.moreOptionsOpen;
+  els.workflowFilterGroup.hidden = !state.showFilters;
+  els.moreOptionsButton.setAttribute("aria-expanded", String(state.moreOptionsOpen));
+  els.routineMenuButton.setAttribute("aria-expanded", String(state.workflowDrawerOpen));
+  if (state.workflowDrawerOpen || state.moreOptionsOpen) els.appNav.classList.remove("secondary-hidden");
 }
 
 function syncControlState() {
@@ -569,6 +616,22 @@ function getVisibleTasks() {
     : state.savedOrders[key] || [];
   const ordered = applyTaskOrder(sorted, order);
   return state.reorderMode ? ordered : moveHandledTasksToBottom(ordered);
+}
+
+function getHandledCountForMode() {
+  const base = state.mode === "routine"
+    ? getRoutineTasks({ includeHandled: true })
+    : state.mode === "free"
+      ? getFreeTimeTasks()
+      : state.mode === "delayed"
+        ? getDelayedTasks()
+        : getAllTasks();
+  return base
+    .filter((task) => state.mode === "delayed" || state.showBlocked || !isBlocked(task))
+    .filter((task) => workflowMatch(task))
+    .filter((task) => conditionMatch(task))
+    .filter((task) => searchMatch(task))
+    .filter(isTaskHandled).length;
 }
 
 function getRoutineTasks({ includeHandled }) {
@@ -822,7 +885,7 @@ function getDeadlineTasks(tasks) {
   return source
     .filter((task) => task.deadline)
     .map((task) => ({ ...task, daysLeft: daysUntil(task.deadline) }))
-    .filter((task) => task.daysLeft >= 0 && task.daysLeft <= state.deadlineWindow)
+    .filter((task) => task.daysLeft <= state.deadlineWindow)
     .filter((task) => !isTaskWorkedOn(task) && !isTaskDelayed(task))
     .sort((a, b) => a.daysLeft - b.daysLeft || (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99));
 }
@@ -830,7 +893,7 @@ function getDeadlineTasks(tasks) {
 function renderDeadlineBand(tasks) {
   els.deadlineBand.hidden = tasks.length === 0;
   els.deadlineList.innerHTML = "";
-  tasks.slice(0, 5).forEach((task) => {
+  tasks.forEach((task) => {
     const row = document.createElement("div");
     row.className = "deadline-item";
     row.innerHTML = `<strong>${escapeHtml(task.task)}</strong><span>${deadlineLabel(task.deadline)}</span>`;
@@ -863,14 +926,14 @@ function buildTaskCard(task, index, tasks) {
   const showDetails = Boolean(state.showDetailsByMode[state.mode]);
   const completionPrompt = shouldPromptCompletion(task);
   const selected = state.selectedTaskIds.has(task.id);
-  card.className = `task-card status-${statusClass(task.status)}${isTaskWorkedOn(task) ? " worked" : ""}${isTaskDelayed(task) ? " delayed" : ""}${state.reorderMode ? " reorder-card" : ""}${state.selectMode ? " select-card" : ""}${selected ? " selected" : ""}${completionPrompt ? " completion-prompt" : ""}`;
+  const expanded = state.expandedTaskIds.has(task.id);
+  card.className = `task-card status-${statusClass(task.status)}${isTaskWorkedOn(task) ? " worked" : ""}${isTaskDelayed(task) ? " delayed" : ""}${state.reorderMode ? " reorder-card" : ""}${state.selectMode ? " select-card" : ""}${selected ? " selected" : ""}${completionPrompt ? " completion-prompt" : ""}${expanded ? " expanded" : ""}`;
   card.title = statusLabel(task.status);
   const checkControls = state.reorderMode
     ? `<div class="reorder-grip" aria-hidden="true">↕</div>`
     : state.selectMode
       ? `<label class="selection-check" title="Select ${escapeHtml(task.task)}"><input type="checkbox" data-action="select" ${selected ? "checked" : ""} /><span class="sr-only">Select ${escapeHtml(task.task)}</span></label>`
-      : `<button class="mini-toggle labeled ${isTaskWorkedOn(task) ? "active" : ""}" data-action="worked" title="Worked on" aria-label="Toggle worked on"><span>✓</span><strong>Worked on</strong></button>
-        <button class="mini-toggle labeled delay ${isTaskDelayed(task) ? "active" : ""}" data-action="delayed" title="Not today" aria-label="Toggle not today"><span>!</span><strong>Not today</strong></button>`;
+      : "";
   const taskActions = state.reorderMode
     ? `<button class="icon-button" data-action="move-up" title="Move up" aria-label="Move ${escapeHtml(task.task)} up" ${index === 0 ? "disabled" : ""}>↑</button>
       <button class="icon-button" data-action="move-down" title="Move down" aria-label="Move ${escapeHtml(task.task)} down" ${index === tasks.length - 1 ? "disabled" : ""}>↓</button>`
@@ -887,15 +950,19 @@ function buildTaskCard(task, index, tasks) {
     <div class="task-checks">${checkControls}</div>
     <div class="task-content">
       <div class="task-title">${escapeHtml(task.task)}</div>
-      <div class="task-meta${showDetails ? " details-open" : ""}">
+      ${expanded ? `<div class="task-handling">
+        <button class="mini-toggle labeled ${isTaskWorkedOn(task) ? "active" : ""}" data-action="worked" title="Worked on"><span>✓</span><strong>Worked on</strong></button>
+        <button class="mini-toggle labeled delay ${isTaskDelayed(task) ? "active" : ""}" data-action="delayed" title="Not today"><span>!</span><strong>Not today</strong></button>
+      </div>` : ""}
+      ${expanded || showDetails ? `<div class="task-meta${showDetails ? " details-open" : ""}${expanded ? " expanded-meta" : ""}">
         ${task.deadline ? `<span class="pill deadline">${deadlineLabel(task.deadline)}</span>` : ""}
         ${task.recurrence !== "none" ? `<span class="pill recurring">↻ ${recurrenceLabel(task)}</span>` : ""}
         ${isBlocked(task) ? `<span class="pill blocked">Blocked</span>` : ""}
         ${state.mode === "delayed" ? reviewIssues(task).map((issue) => `<span class="pill review">${escapeHtml(issue)}</span>`).join("") : ""}
         ${task.showLastWorkedOn && lastWorkedOnDate(task) ? `<span class="pill last-worked">Last worked on: ${formatIsoDate(lastWorkedOnDate(task))}</span>` : ""}
         ${detailTags}
-      </div>
-      ${completionPrompt ? `<label class="complete-prompt"><input type="checkbox" data-action="complete-delete" /> <span>Complete and delete</span></label>` : ""}
+      </div>` : ""}
+      ${completionPrompt && expanded ? `<label class="complete-prompt"><input type="checkbox" data-action="complete-delete" /> <span>Complete and delete</span></label>` : ""}
       ${state.mode === "delayed" && !state.selectMode && !state.reorderMode ? `<button class="review-clear-button" data-action="review-clear">No changes needed</button>` : ""}
     </div>
     <div class="task-actions">${taskActions}</div>`;
@@ -909,12 +976,20 @@ function buildTaskCard(task, index, tasks) {
       toggleTaskSelection(task.id, !state.selectedTaskIds.has(task.id));
     });
   } else {
-    card.querySelector('[data-action="worked"]').addEventListener("click", () => toggleTask(task.id, "workedOn"));
-    card.querySelector('[data-action="delayed"]').addEventListener("click", () => toggleTask(task.id, "delayed"));
-    if (completionPrompt) card.querySelector('[data-action="complete-delete"]').addEventListener("change", () => requestDeleteTask(task.id));
+    if (expanded) {
+      card.querySelector('[data-action="worked"]').addEventListener("click", () => toggleTask(task.id, "workedOn"));
+      card.querySelector('[data-action="delayed"]').addEventListener("click", () => toggleTask(task.id, "delayed"));
+    }
+    if (completionPrompt && expanded) card.querySelector('[data-action="complete-delete"]').addEventListener("change", () => requestDeleteTask(task.id));
     if (state.mode === "delayed") card.querySelector('[data-action="review-clear"]').addEventListener("click", () => clearReview(task.id));
     card.querySelector('[data-action="edit"]').addEventListener("click", () => openTaskEditor(task.id));
     card.querySelector('[data-action="delete"]').addEventListener("click", () => requestDeleteTask(task.id));
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button, input, label, select, a")) return;
+      if (state.expandedTaskIds.has(task.id)) state.expandedTaskIds.delete(task.id);
+      else state.expandedTaskIds.add(task.id);
+      render();
+    });
   }
   return card;
 }
@@ -1008,6 +1083,7 @@ function openCapture() {
   els.recurrenceInput.value = "none";
   els.stackMissedInput.checked = false;
   els.showLastWorkedOnInput.checked = false;
+  els.addToHighlightsInput.checked = false;
   renderDependencyOptions([], []);
   els.advancedSettings.open = false;
   syncRecurrenceInput();
@@ -1031,6 +1107,7 @@ function openTaskEditor(id) {
   els.recurrenceInput.value = task.recurrence;
   els.stackMissedInput.checked = task.stackMissed;
   els.showLastWorkedOnInput.checked = Boolean(task.showLastWorkedOn);
+  els.addToHighlightsInput.checked = state.highlights.taskIds.includes(task.id);
   renderDependencyOptions(blockedByIds(task), task.blocking);
   els.advancedSettings.open = false;
   syncRecurrenceInput();
@@ -1122,6 +1199,13 @@ function saveCapturedTask(event) {
     state.tasks.push(savedTask);
   }
   syncTaskRelations(savedTask, blockedByIdsValue, blockingIdsValue);
+  const wasHighlighted = state.highlights.taskIds.includes(savedTask.id);
+  if (els.addToHighlightsInput.checked) {
+    state.highlights.taskIds = uniqueValues([...state.highlights.taskIds, savedTask.id]);
+  } else {
+    state.highlights.taskIds = state.highlights.taskIds.filter((id) => id !== savedTask.id);
+  }
+  if (wasHighlighted !== els.addToHighlightsInput.checked) markHighlightsEdited();
   state.paths.filter((path) => path.taskIds.includes(savedTask.id)).forEach(rebuildPathChain);
   savePaths();
   saveTasks();
@@ -1307,7 +1391,7 @@ function applyBulkTags(event) {
 function addSelectedToHighlights() {
   if (!state.selectedTaskIds.size) return;
   state.highlights.taskIds = uniqueValues([...state.highlights.taskIds, ...state.selectedTaskIds]);
-  saveHighlights();
+  markHighlightsEdited();
   endSelection();
   state.mode = "highlights";
   render();
@@ -1324,6 +1408,7 @@ function clearReview(id) {
 
 function currentHandlingKey() {
   if (state.mode === "routine" || state.mode === "free") return handlingKey(state.day, state.time);
+  if (state.mode === "highlights") return `highlight:${highlightCycleKey()}`;
   return "global";
 }
 
@@ -1334,7 +1419,20 @@ function handlingKey(day, time) {
 function handlingRecord(task, key = currentHandlingKey()) {
   const records = task.handledStates && typeof task.handledStates === "object" ? task.handledStates : {};
   if (key === "global") return latestHandlingRecord(task);
+  if (key.startsWith("highlight:")) return highlightHandlingRecord(task);
   return records[key] || null;
+}
+
+function highlightHandlingRecord(task) {
+  const boundary = highlightCycleStart();
+  const records = Object.values(task.handledStates || {})
+    .filter((record) => record && (record.workedOn || record.delayed) && new Date(record.at || 0) >= boundary)
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  if (records.length) return records[0];
+  if ((task.workedOn || task.delayed) && task.lastCheckboxAt && new Date(task.lastCheckboxAt) >= boundary) {
+    return latestHandlingRecord(task);
+  }
+  return null;
 }
 
 function latestHandlingRecord(task) {
@@ -1462,34 +1560,50 @@ function loadHighlights() {
         note: typeof saved.note === "string" ? saved.note : "",
         taskIds: Array.isArray(saved.taskIds) ? saved.taskIds : [],
         lastPromptCycle: saved.lastPromptCycle || cycle,
+        lastEditedCycle: saved.lastEditedCycle || "",
       };
     }
   } catch {
     // Use a clean highlights panel.
   }
-  return { note: "", taskIds: [], lastPromptCycle: cycle };
+  return { note: "", taskIds: [], lastPromptCycle: cycle, lastEditedCycle: "" };
 }
 
 function saveHighlights() {
   localStorage.setItem(highlightsStorageKey, JSON.stringify(state.highlights));
 }
 
+function markHighlightsEdited() {
+  state.highlights.lastEditedCycle = highlightCycleKey();
+  saveHighlights();
+}
+
 function highlightCycleKey() {
+  return toIsoDate(highlightCycleStart());
+}
+
+function highlightCycleStart() {
   const now = new Date();
   const boundary = new Date(now);
   boundary.setHours(5, 0, 0, 0);
   if (now < boundary) boundary.setDate(boundary.getDate() - 1);
-  return toIsoDate(boundary);
+  return boundary;
 }
 
 function maybePromptHighlightRefresh() {
   const cycle = highlightCycleKey();
   if (state.highlights.lastPromptCycle === cycle) return;
+  if (state.highlights.lastEditedCycle === cycle) {
+    state.highlights.lastPromptCycle = cycle;
+    saveHighlights();
+    return;
+  }
   const hasContent = state.highlights.note.trim() || state.highlights.taskIds.length;
   state.highlights.lastPromptCycle = cycle;
   if (hasContent && window.confirm("It is a new highlights day. Clear the note and attached tasks for a fresh start?")) {
     state.highlights.note = "";
     state.highlights.taskIds = [];
+    state.highlights.lastEditedCycle = cycle;
   }
   saveHighlights();
 }
@@ -1500,6 +1614,7 @@ function refreshHighlights(manual) {
   state.highlights.note = "";
   state.highlights.taskIds = [];
   state.highlights.lastPromptCycle = highlightCycleKey();
+  state.highlights.lastEditedCycle = highlightCycleKey();
   saveHighlights();
   render();
 }
@@ -1518,25 +1633,42 @@ function renderHighlights() {
   }
   tasks.forEach((task, index) => {
     const card = document.createElement("article");
-    card.className = `task-card highlight-card status-${statusClass(task.status)}${isTaskWorkedOn(task) ? " worked" : ""}${isTaskDelayed(task) ? " delayed" : ""}`;
+    const expanded = state.expandedTaskIds.has(task.id);
+    const completionPrompt = shouldPromptCompletion(task);
+    card.className = `task-card highlight-card status-${statusClass(task.status)}${isTaskWorkedOn(task) ? " worked" : ""}${isTaskDelayed(task) ? " delayed" : ""}${expanded ? " expanded" : ""}`;
     card.draggable = true;
     card.dataset.taskId = task.id;
     card.innerHTML = `
-      <div class="task-checks">
+      <div class="task-content">
+        <div class="task-title">${escapeHtml(task.task)}</div>
+        ${expanded ? `<div class="task-handling">
         <button class="mini-toggle labeled ${isTaskWorkedOn(task) ? "active" : ""}" data-action="worked"><span>✓</span><strong>Worked on</strong></button>
         <button class="mini-toggle labeled delay ${isTaskDelayed(task) ? "active" : ""}" data-action="delayed"><span>!</span><strong>Not today</strong></button>
+        </div>
+        ${task.deadline ? `<div class="task-meta"><span class="pill deadline">${deadlineLabel(task.deadline)}</span></div>` : ""}
+        ${completionPrompt ? `<label class="complete-prompt"><input type="checkbox" data-action="complete-delete" /> <span>Complete and delete</span></label>` : ""}` : ""}
       </div>
-      <div class="task-content"><div class="task-title">${escapeHtml(task.task)}</div>${task.deadline ? `<div class="task-meta"><span class="pill deadline">${deadlineLabel(task.deadline)}</span></div>` : ""}</div>
       <div class="task-actions">
-        <button class="icon-button" data-action="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button class="icon-button" data-action="down" aria-label="Move down" ${index === tasks.length - 1 ? "disabled" : ""}>↓</button>
-        <button class="ghost-button compact-button" data-action="drop">Remove</button>
+        ${expanded ? `<button class="icon-button" data-action="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button class="icon-button" data-action="down" aria-label="Move down" ${index === tasks.length - 1 ? "disabled" : ""}>↓</button>` : ""}
+        <button class="icon-button" data-action="edit" aria-label="Edit ${escapeHtml(task.task)}" title="Edit">✎</button>
+        <button class="icon-button" data-action="drop" aria-label="Remove from highlights" title="Remove from highlights">−</button>
       </div>`;
-    card.querySelector('[data-action="worked"]').addEventListener("click", () => toggleTask(task.id, "workedOn"));
-    card.querySelector('[data-action="delayed"]').addEventListener("click", () => toggleTask(task.id, "delayed"));
-    card.querySelector('[data-action="up"]').addEventListener("click", () => moveHighlightTask(task.id, -1));
-    card.querySelector('[data-action="down"]').addEventListener("click", () => moveHighlightTask(task.id, 1));
+    if (expanded) {
+      card.querySelector('[data-action="worked"]').addEventListener("click", () => toggleTask(task.id, "workedOn"));
+      card.querySelector('[data-action="delayed"]').addEventListener("click", () => toggleTask(task.id, "delayed"));
+      card.querySelector('[data-action="up"]').addEventListener("click", () => moveHighlightTask(task.id, -1));
+      card.querySelector('[data-action="down"]').addEventListener("click", () => moveHighlightTask(task.id, 1));
+      if (completionPrompt) card.querySelector('[data-action="complete-delete"]').addEventListener("change", () => requestDeleteTask(task.id));
+    }
+    card.querySelector('[data-action="edit"]').addEventListener("click", () => openTaskEditor(task.id));
     card.querySelector('[data-action="drop"]').addEventListener("click", () => dropHighlightTask(task.id));
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button, input, label")) return;
+      if (state.expandedTaskIds.has(task.id)) state.expandedTaskIds.delete(task.id);
+      else state.expandedTaskIds.add(task.id);
+      renderHighlights();
+    });
     card.addEventListener("dragstart", (event) => event.dataTransfer.setData("text/plain", task.id));
     card.addEventListener("dragover", (event) => event.preventDefault());
     card.addEventListener("drop", (event) => {
@@ -1552,7 +1684,7 @@ function moveHighlightTask(id, direction) {
   const to = from + direction;
   if (from < 0 || to < 0 || to >= state.highlights.taskIds.length) return;
   [state.highlights.taskIds[from], state.highlights.taskIds[to]] = [state.highlights.taskIds[to], state.highlights.taskIds[from]];
-  saveHighlights();
+  markHighlightsEdited();
   renderHighlights();
 }
 
@@ -1563,13 +1695,13 @@ function moveHighlightTaskBefore(draggedId, targetId) {
   if (target < 0) return;
   ids.splice(target, 0, draggedId);
   state.highlights.taskIds = ids;
-  saveHighlights();
+  markHighlightsEdited();
   renderHighlights();
 }
 
 function dropHighlightTask(id) {
   state.highlights.taskIds = state.highlights.taskIds.filter((taskId) => taskId !== id);
-  saveHighlights();
+  markHighlightsEdited();
   renderHighlights();
 }
 

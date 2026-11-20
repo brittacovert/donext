@@ -12,138 +12,69 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Workflow controls">
-        <div class="brand">
-          <div class="brand-mark">bp</div>
-          <div>
-            <h1>batl plan</h1>
-            <p class="app-subtitle">big task list &amp; workflows</p>
-            <p id="todayLabel"></p>
-          </div>
-        </div>
-
-        <section class="panel compact">
-          <div class="panel-title">Mode</div>
-          <div class="segmented mode-grid" role="tablist" aria-label="Workflow mode">
-            <button class="segment active" data-mode="routine">Routine</button>
-            <button class="segment" data-mode="highlights">Highlights</button>
-            <button class="segment" data-mode="all">All</button>
-            <button class="segment" data-mode="paths">Paths</button>
-            <button class="segment" data-mode="delayed">Review</button>
-          </div>
-          <button class="ghost-button mobile-filters-toggle" id="mobileFiltersToggle" type="button">Filters</button>
-        </section>
-
-        <section class="panel" id="workflowPanel">
-          <div class="panel-header">
-            <div class="panel-title">Workflow</div>
-            <div class="panel-tools">
-              <button class="text-button" id="manageWorkflows" type="button">Edit</button>
-              <button class="icon-button" id="resetWorkflow" title="Reset workflow" aria-label="Reset workflow">↺</button>
-            </div>
-          </div>
-          <div class="select-grid" id="routineSelectors">
-            <label>
-              Day
-              <select id="daySelect"></select>
-            </label>
-            <label>
-              Time
-              <select id="timeSelect"></select>
-            </label>
-          </div>
-          <label class="toggle-row free-day-filter" id="freeDayFilterRow" hidden>
-            <input id="freeDayFilter" type="checkbox" />
-            <span>Match selected day</span>
-          </label>
-          <div class="filter-group" id="workflowFilterGroup">
-            <div class="field-title">Workflow filters</div>
-            <div id="workflowChips" class="chip-list"></div>
-          </div>
-        </section>
-
-        <section class="panel" id="conditionPanel">
-          <div class="panel-header">
-            <div class="panel-title">Conditions</div>
-            <div class="panel-tools">
-              <button class="text-button" id="manageConditions" type="button">Edit</button>
-              <button class="text-button" id="clearConditions">Clear</button>
-            </div>
-          </div>
-          <div id="conditionChips" class="chip-list"></div>
-        </section>
-
-        <section class="panel compact" id="deadlinePanel">
-          <div class="panel-title">Deadline Focus</div>
-          <label class="range-row">
-            <span>Window</span>
-            <input id="deadlineWindow" type="range" min="0" max="21" value="5" />
-            <strong id="deadlineWindowLabel">5d</strong>
-          </label>
-          <label class="toggle-row">
-            <input id="deadlineOnlyActionable" type="checkbox" checked />
-            <span>Only actionable matches</span>
-          </label>
-        </section>
-      </aside>
-
       <main class="main">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow" id="modeEyebrow">Routine Builder</p>
-            <h2 id="viewTitle">Morning Routine</h2>
+        <header class="app-nav" id="appNav">
+          <div class="primary-nav-row" role="tablist" aria-label="Primary views">
+            <button class="nav-pill routine-nav segment active" id="routineMenuButton" data-mode="routine" type="button">
+              <span id="routineButtonLabel">Today</span><span aria-hidden="true">⌄</span>
+            </button>
+            <button class="nav-pill highlight-nav segment" data-mode="highlights" type="button" title="Highlights" aria-label="Highlights">
+              <span aria-hidden="true">★</span><span class="nav-text">Highlights</span>
+            </button>
           </div>
-          <div class="top-actions">
-            <button class="ghost-button" id="highlightShortcut" type="button">Highlights</button>
-            <button class="primary-button" id="openCapture">+ Add</button>
+          <div class="secondary-nav-row" id="secondaryNav" role="tablist" aria-label="More views">
+            <button class="nav-pill icon-nav" id="moreOptionsButton" type="button" aria-expanded="false"><span aria-hidden="true">☰</span><span class="nav-text">More</span></button>
+            <button class="nav-pill segment" data-mode="paths" type="button"><span aria-hidden="true">↝</span><span class="nav-text">Paths</span></button>
+            <button class="nav-pill segment" data-mode="delayed" type="button"><span aria-hidden="true">☑</span><span class="nav-text">Review</span></button>
+            <button class="nav-pill segment" data-mode="all" type="button"><span class="nav-text">All</span></button>
           </div>
+
+          <section class="nav-drawer" id="workflowPanel" hidden>
+            <div class="drawer-heading"><strong>Routine and conditions</strong><button class="icon-button" id="closeWorkflowDrawer" type="button" aria-label="Close routine settings">×</button></div>
+            <div class="select-grid" id="routineSelectors">
+              <label>Day<select id="daySelect"></select></label>
+              <label>Workflow<select id="timeSelect"></select></label>
+            </div>
+            <label class="toggle-row free-day-filter" id="freeDayFilterRow" hidden><input id="freeDayFilter" type="checkbox" /><span>Match selected day</span></label>
+            <div class="drawer-section" id="conditionPanel">
+              <div class="panel-header"><div class="field-title">Conditions</div><div><button class="text-button" id="manageConditions" type="button">Edit</button><button class="text-button" id="clearConditions" type="button">Clear</button></div></div>
+              <div id="conditionChips" class="chip-list"></div>
+            </div>
+            <div class="drawer-section" id="workflowFilterGroup" hidden>
+              <div class="panel-header"><div class="field-title">Additional workflow filters</div><button class="text-button" id="manageWorkflows" type="button">Edit</button></div>
+              <div id="workflowChips" class="chip-list"></div>
+            </div>
+            <button class="ghost-button" id="resetWorkflow" type="button">Reset to current routine</button>
+          </section>
+
+          <section class="nav-drawer more-options" id="moreOptionsDrawer" hidden>
+            <div class="drawer-heading"><strong>More options</strong><button class="icon-button" id="closeMoreOptions" type="button" aria-label="Close more options">×</button></div>
+            <div class="option-metrics"><span><strong id="visibleCount">0</strong> showing</span><span><strong id="handledCount">0</strong> handled</span></div>
+            <div class="search-wrap"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search visible tasks" /></div>
+            <div class="option-toggles">
+              <label class="toggle-row inline"><input id="hideHandled" type="checkbox" checked /><span>Hide handled</span></label>
+              <label class="toggle-row inline"><input id="showBlocked" type="checkbox" /><span>Show blocked</span></label>
+              <label class="toggle-row inline"><input id="showFilters" type="checkbox" /><span>Show filters</span></label>
+              <label class="toggle-row inline"><input id="showDetails" type="checkbox" /><span>Show details</span></label>
+            </div>
+            <div class="order-controls">
+              <button class="ghost-button" id="startSelect" type="button">Select tasks</button>
+              <button class="ghost-button" id="startReorder" type="button">Reorder</button>
+              <div class="reorder-actions" id="reorderActions" hidden><button class="ghost-button" id="cancelReorder" type="button">Cancel</button><button class="primary-button" id="saveReorder" type="button">Save order</button></div>
+            </div>
+          </section>
+
+          <span id="todayLabel" hidden></span><span id="modeEyebrow" hidden></span><h2 id="viewTitle" class="sr-only">Routine</h2>
+          <span id="routineProgress" hidden>0/0</span><span id="progressMetric" hidden></span><span id="deadlineCount" hidden>0</span>
         </header>
 
-        <section class="status-strip" aria-label="Workflow status">
-          <div id="progressMetric">
-            <span class="metric" id="routineProgress">0/0</span>
-            <span class="metric-label">routine handled</span>
+        <section class="deadline-band due-soon" id="deadlineBand" hidden>
+          <div class="due-soon-heading"><div><p class="eyebrow">Deadline focus</p><h3>Due soon</h3></div><strong id="deadlineWindowLabel">5 days</strong></div>
+          <div class="deadline-controls" id="deadlinePanel">
+            <label class="range-row"><span class="sr-only">Deadline window</span><input id="deadlineWindow" type="range" min="0" max="21" value="5" /></label>
+            <label class="toggle-row inline"><input id="deadlineOnlyActionable" type="checkbox" checked /><span>Only current matches</span></label>
           </div>
-          <div>
-            <span class="metric" id="deadlineCount">0</span>
-            <span class="metric-label">imminent</span>
-          </div>
-          <div>
-            <span class="metric" id="visibleCount">0</span>
-            <span class="metric-label">showing</span>
-          </div>
-        </section>
-
-        <section class="deadline-band" id="deadlineBand" hidden>
-          <div class="band-title">Near Deadlines</div>
           <div id="deadlineList" class="deadline-list"></div>
-        </section>
-
-        <section class="toolbar" aria-label="List controls">
-          <div class="search-wrap">
-            <span aria-hidden="true">⌕</span>
-            <input id="searchInput" type="search" placeholder="Search visible tasks" />
-          </div>
-          <label class="toggle-row inline">
-            <input id="hideHandled" type="checkbox" checked />
-            <span>Hide handled</span>
-          </label>
-          <label class="toggle-row inline">
-            <input id="showBlocked" type="checkbox" />
-            <span>Show blocked</span>
-          </label>
-          <label class="toggle-row inline">
-            <input id="showDetails" type="checkbox" />
-            <span>Show details</span>
-          </label>
-          <div class="order-controls">
-            <button class="ghost-button" id="startSelect" type="button">Select</button>
-            <button class="ghost-button" id="startReorder" type="button">Reorder</button>
-            <div class="reorder-actions" id="reorderActions" hidden>
-              <button class="ghost-button" id="cancelReorder" type="button">Cancel</button>
-              <button class="primary-button" id="saveReorder" type="button">Save order</button>
-            </div>
-          </div>
         </section>
 
         <section class="bulk-bar" id="bulkBar" hidden>
@@ -179,6 +110,8 @@
           <p class="path-help">Drag steps to reorder them. Add a task between steps to update that part of the dependency chain.</p>
           <div id="pathCanvas" class="path-canvas"></div>
         </section>
+
+        <button class="floating-add" id="openCapture" type="button" aria-label="Add task" title="Add task">+</button>
       </main>
     </div>
 
@@ -321,6 +254,11 @@
           <div class="field-title">Conditions</div>
           <div id="conditionInput" class="chip-list selectable"></div>
         </div>
+
+        <label class="advanced-check add-highlight-check">
+          <input id="addToHighlightsInput" type="checkbox" />
+          <span>Add to today's highlights</span>
+        </label>
 
         <menu class="dialog-actions">
           <button class="ghost-button" id="cancelCapture" type="button">Cancel</button>

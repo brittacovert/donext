@@ -1,4 +1,4 @@
-const cacheName = "batl-plan-v14";
+const cacheName = "batl-plan-v15";
 const appFiles = [
   "./",
   "./index.html",
